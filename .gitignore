@@ -1,0 +1,34 @@
+# ========================================================
+# CSL411 Compiler Design Lab - Git Ignore Configuration
+# ========================================================
+
+# --- Build & Binary Artifacts ---
+*.out
+*.o
+*.exe
+y.tab.c
+y.tab.h
+lex.yy.c
+
+# --- Raw Input Markdown Files & Raw Explanations ---
+# Excluded per user requirement: preserved as HTML in lessons/ and reference/
+calculator_lex_yacc.md
+constant_propagation.md
+first_of_grammar.md
+intermediate_code_generator.md
+shift_reduce_parser.md
+explanations/
+
+# --- Editor & IDE Files ---
+.vscode/
+.idea/
+
+# --- Operating System Files ---
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+
+# --- Agentic Assistant & Local Environment Metadata ---
+.antigravity/
+.gemini/

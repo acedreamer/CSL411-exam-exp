@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reference: FIRST Set of Context-Free Grammar</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/theme.js"></script>
+  <style>
+    @media print {
+      body { padding: 0; font-size: 14px; }
+      .nav-links, .theme-toggle-wrapper { display: none; }
+      pre { border: 1px solid #ccc; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="kicker"><a href="../index.html" class="kicker-home">&larr; Home</a> &bull; Reference Document &bull; CSL411</div>
+    <h1>FIRST Set of Grammar Cheat Sheet</h1>
+    <p class="subtitle">Grammar indexing conventions, recursive descent mechanics, deduplication, and minimal C skeleton.</p>
+  </header>
+
+  <h2>1. Grammar Conventions & Invariants</h2>
+  <div class="diagram-box">
+    <p>Each production rule string in <code>p[i]</code> follows the strict rigid format <code>LHS=RHS</code>:</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Array Index</th>
+          <th>Component</th>
+          <th>Classification</th>
+          <th>Semantic Role</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>p[i][0]</code></td>
+          <td>LHS Non-Terminal</td>
+          <td><code>isupper(p[i][0])</code></td>
+          <td>Grammar variable being expanded (e.g., <code>'E'</code>, <code>'T'</code>, <code>'F'</code>).</td>
+        </tr>
+        <tr>
+          <td><code>p[i][1]</code></td>
+          <td>Separator</td>
+          <td>Literal <code>'='</code></td>
+          <td>Distinguishes head from production body.</td>
+        </tr>
+        <tr>
+          <td><code>p[i][2]</code></td>
+          <td>Leading RHS Symbol</td>
+          <td>Variable, Terminal, or <code>'$'</code></td>
+          <td>The first symbol produced; dictates immediate or recursive FIRST inclusion.</td>
+        </tr>
+        <tr>
+          <td><code>p[i][3...]</code></td>
+          <td>Subsequent RHS</td>
+          <td>Grammar symbols</td>
+          <td>Rest of the production tail (e.g., <code>'X'</code> in <code>"E=TX"</code>).</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>2. Core Data Structures</h2>
+  <div class="diagram-box">
+    <table>
+      <thead>
+        <tr>
+          <th>Variable</th>
+          <th>Type</th>
+          <th>Scope</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>p[20][20]</code></td>
+          <td><code>char[20][20]</code></td>
+          <td>Global</td>
+          <td>Stores up to 20 production strings of length up to 20 bytes (e.g., <code>"E=TX"</code>, <code>"X=$"</code>).</td>
+        </tr>
+        <tr>
+          <td><code>f[20]</code></td>
+          <td><code>char[20]</code></td>
+          <td>Global</td>
+          <td>Accumulator buffer holding the unique characters belonging to the computed FIRST set.</td>
+        </tr>
+        <tr>
+          <td><code>m</code></td>
+          <td><code>int</code></td>
+          <td>Global</td>
+          <td>Index counter tracking the number of unique elements currently placed into <code>f</code>.</td>
+        </tr>
+        <tr>
+          <td><code>n</code></td>
+          <td><code>int</code></td>
+          <td>Global</td>
+          <td>Total count of productions input by the user.</td>
+        </tr>
+        <tr>
+          <td><code>c</code></td>
+          <td><code>char</code></td>
+          <td>Local</td>
+          <td>Query non-terminal symbol passed by the user into <code>first(c)</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>3. Complete Reconstructible C Code (Under 35 Lines)</h2>
+  <pre><code>#include &lt;stdio.h&gt;
+#include &lt;ctype.h&gt;
+
+char p[20][20], f[20];
+int m = 0, n;
+
+void add_to_result(char ch) {
+    for (int i = 0; i < m; i++)
+        if (f[i] == ch) return;
+    f[m++] = ch;
+}
+
+void first(char c) {
+    if (!isupper(c)) { add_to_result(c); return; }
+    for (int i = 0; i < n; i++) {
+        if (p[i][0] == c) {
+            if (p[i][2] == '$') add_to_result('$');
+            else if (!isupper(p[i][2])) add_to_result(p[i][2]);
+            else first(p[i][2]);
+        }
+    }
+}
+
+int main() {
+    char c;
+    printf("Enter number of productions: ");
+    scanf("%d", &n);
+    printf("Enter productions (LHS=RHS, '$' for epsilon):\n");
+    for (int i = 0; i < n; i++) scanf("%s", p[i]);
+    printf("Enter non-terminal: ");
+    scanf(" %c", &c);
+    first(c);
+    printf("FIRST(%c) = { ", c);
+    for (int i = 0; i < m; i++) printf("%c%s", f[i], i < m - 1 ? ", " : "");
+    printf(" }\n");
+    return 0;
+}</code></pre>
+
+  <h2>4. Core Mathematical Rules vs. C Code Mapping</h2>
+  <div class="diagram-box">
+    <table>
+      <thead>
+        <tr>
+          <th>Formal Grammar Rule</th>
+          <th>C Conditional Implementation</th>
+          <th>Action Taken</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Base Case:</strong> If $X$ is a terminal, $\text{FIRST}(X) = \{ X \}$.</td>
+          <td><code>if (!isupper(c))</code></td>
+          <td><code>add_to_result(c); return;</code></td>
+        </tr>
+        <tr>
+          <td><strong>Epsilon Rule:</strong> If $X \to \epsilon$, add $\epsilon$ to $\text{FIRST}(X)$.</td>
+          <td><code>if (p[i][2] == '$')</code></td>
+          <td><code>add_to_result('$');</code></td>
+        </tr>
+        <tr>
+          <td><strong>Terminal Prefix:</strong> If $X \to a\alpha$ where $a$ is terminal.</td>
+          <td><code>else if (!isupper(p[i][2]))</code></td>
+          <td><code>add_to_result(p[i][2]);</code></td>
+        </tr>
+        <tr>
+          <td><strong>Non-Terminal Prefix:</strong> If $X \to Y\alpha$ where $Y$ is non-terminal.</td>
+          <td><code>else</code> (i.e. <code>isupper(p[i][2])</code>)</td>
+          <td>Recursive call <code>first(p[i][2]);</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>5. Viva Traps & Examiner Checkpoints</h2>
+  <ul>
+    <li><strong>Left Recursion Infinite Descent:</strong> If a grammar contains direct left recursion (e.g., $E \to E + T$), calling <code>first('E')</code> inspects <code>p[i][2]</code> which is <code>'E'</code>, triggering <code>first('E')</code> repeatedly until stack overflow occurs. <em>Defense:</em> CFGs must undergo left-recursion elimination before predictive FIRST/FOLLOW calculation.</li>
+    <li><strong>Character Classification via <code>isupper()</code>:</strong> The program relies on <code>&lt;ctype.h&gt;</code>: uppercase letters ($A-Z$) are non-terminals, while lowercase letters, symbols (<code>+</code>, <code>*</code>, <code>(</code>, <code>)</code>), digits, and the sentinel <code>$</code> evaluate to false under <code>isupper()</code> and are treated as terminals.</li>
+    <li><strong>Set Deduplication Invariant:</strong> In set theory, $\{ i, (, i \} = \{ i, ( \}$. The function <code>add_to_result(char ch)</code> performs a linear scan over $f[0 \dots m-1]$. If <code>ch</code> exists, it returns immediately without incrementing <code>m</code>.</li>
+    <li><strong>Epsilon Representation:</strong> In KTU lab evaluations, epsilon ($\epsilon$) is customarily entered as <code>$</code>, but some lab manuals use <code>#</code> or <code>e</code>. Be ready to change the literal character check in <code>p[i][2] == '$'</code> if requested.</li>
+    <li><strong>The Leading Symbol Assumption:</strong> In full LL(1) theory, if $p[i][2]$ can derive epsilon ($\epsilon \in \text{FIRST}(p[i][2])$), the algorithm must check $p[i][3]$ and subsequent symbols. In this standard KTU foundational lab code, the grammar is structured such that leading symbols define the first token.</li>
+  </ul>
+
+  <div class="nav-links">
+    <a href="../index.html" class="nav-home">&larr; Home</a>
+    <a href="../lessons/0003-first-set-of-grammar-from-scratch.html">&larr; Return to Lesson 0003</a>
+    <a href="intermediate-code-reference.html">Next: Intermediate Code &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

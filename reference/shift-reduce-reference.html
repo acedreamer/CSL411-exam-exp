@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reference: Shift-Reduce Parser Architecture & Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/theme.js"></script>
+  <style>
+    @media print {
+      body { padding: 0; font-size: 14px; }
+      .nav-links, .theme-toggle-wrapper { display: none; }
+      pre { border: 1px solid #ccc; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="kicker"><a href="../index.html" class="kicker-home">&larr; Home</a> &bull; Reference Document &bull; CSL411</div>
+    <h1>Shift-Reduce Parser Cheat Sheet</h1>
+    <p class="subtitle">Grammar rules, dual-pointer stack mechanics, handle pruning table, and examiner viva traps.</p>
+  </header>
+
+  <h2>1. Context-Free Grammar Rules</h2>
+  <div class="diagram-box">
+    <p>The parser operates on an arithmetic expression grammar consisting of four production rules:</p>
+    <pre><code>Rule 1:  E &rarr; E + E     (Binary Addition)
+Rule 2:  E &rarr; E * E     (Binary Multiplication)
+Rule 3:  E &rarr; ( E )     (Parenthesized Expression)
+Rule 4:  E &rarr; id        (Terminal Identifier)</code></pre>
+    <p><strong>Goal:</strong> Transform the terminal input stream into the start symbol <code>E</code> using bottom-up handle reduction.</p>
+  </div>
+
+  <h2>2. Dual-Pointer Stack & Memory Layout</h2>
+  <div class="diagram-box">
+    <table>
+      <thead>
+        <tr>
+          <th>Variable</th>
+          <th>Type</th>
+          <th>Initial Value</th>
+          <th>Operational Role</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>stack[50]</code></td>
+          <td><code>char[]</code></td>
+          <td><code>""</code> (empty)</td>
+          <td>LIFO stack holding shifted terminals and reduced non-terminals.</td>
+        </tr>
+        <tr>
+          <td><code>input[50]</code></td>
+          <td><code>char[]</code></td>
+          <td>User input</td>
+          <td>Terminal string buffer. Consumed tokens are overwritten with <code>' '</code>.</td>
+        </tr>
+        <tr>
+          <td><code>k</code></td>
+          <td><code>int</code></td>
+          <td><code>0</code></td>
+          <td>Stack top index pointer; represents current stack height / next push slot.</td>
+        </tr>
+        <tr>
+          <td><code>i</code></td>
+          <td><code>int</code></td>
+          <td><code>0</code></td>
+          <td>Input stream scan index; advances left-to-right from <code>0</code> to <code>len</code>.</td>
+        </tr>
+        <tr>
+          <td><code>len</code></td>
+          <td><code>int</code></td>
+          <td><code>strlen(input)</code></td>
+          <td>Total character length of the original input token string.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>3. The <code>check()</code> Handle Identification Table</h2>
+  <p>At every step, <code>check()</code> inspects the topmost elements of the stack. If a handle is discovered, it replaces the substring with <code>'E'</code>, adjusts <code>k</code>, null-terminates the stack string, and returns <code>1</code>:</p>
+
+  <div class="diagram-box">
+    <table>
+      <thead>
+        <tr>
+          <th>Rule</th>
+          <th>Handle Pattern</th>
+          <th>Stack Boundary Guard</th>
+          <th>Reduction & Pointer Mechanics</th>
+          <th>Return</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>E &rarr; id</code></td>
+          <td><code>'i', 'd'</code></td>
+          <td><code>k >= 2 && stack[k-1]=='d' && stack[k-2]=='i'</code></td>
+          <td><code>stack[k-2]='E'; stack[k-1]='\0'; k=k-1;</code></td>
+          <td><code>1</code></td>
+        </tr>
+        <tr>
+          <td><code>E &rarr; E+E</code></td>
+          <td><code>'E', '+', 'E'</code></td>
+          <td><code>k >= 3 && stack[k-1]=='E' && stack[k-2]=='+' && stack[k-3]=='E'</code></td>
+          <td><code>stack[k-3]='E'; stack[k-2]='\0'; k=k-2;</code></td>
+          <td><code>1</code></td>
+        </tr>
+        <tr>
+          <td><code>E &rarr; E*E</code></td>
+          <td><code>'E', '*', 'E'</code></td>
+          <td><code>k >= 3 && stack[k-1]=='E' && stack[k-2]=='*' && stack[k-3]=='E'</code></td>
+          <td><code>stack[k-3]='E'; stack[k-2]='\0'; k=k-2;</code></td>
+          <td><code>1</code></td>
+        </tr>
+        <tr>
+          <td><code>E &rarr; (E)</code></td>
+          <td><code>'(', 'E', ')'</code></td>
+          <td><code>k >= 3 && stack[k-1]==')' && stack[k-2]=='E' && stack[k-3]=='('</code></td>
+          <td><code>stack[k-3]='E'; stack[k-2]='\0'; k=k-2;</code></td>
+          <td><code>1</code></td>
+        </tr>
+        <tr>
+          <td><em>None</em></td>
+          <td>No match</td>
+          <td>Fallback</td>
+          <td>No change to stack or pointer.</td>
+          <td><code>0</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>4. Minimal Reconstructible C Skeleton (&lt; 45 Lines)</h2>
+  <p>This compact, complete implementation fits entirely in active memory and can be reproduced on a blank sheet in under 3 minutes:</p>
+
+  <pre><code>#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+
+char in[50], st[50];
+int k = 0, i = 0, len;
+
+int check() {
+    if (k >= 2 && st[k-1] == 'd' && st[k-2] == 'i') {
+        st[k-2] = 'E'; st[k-1] = '\0'; k--;
+        printf("%s\t\t%s\t\tREDUCE E->id\n", st, in); return 1;
+    }
+    if (k >= 3 && st[k-1] == 'E' && (st[k-2] == '+' || st[k-2] == '*') && st[k-3] == 'E') {
+        char op = st[k-2]; st[k-3] = 'E'; st[k-2] = '\0'; k -= 2;
+        printf("%s\t\t%s\t\tREDUCE E->E%cE\n", st, in, op); return 1;
+    }
+    if (k >= 3 && st[k-1] == ')' && st[k-2] == 'E' && st[k-3] == '(') {
+        st[k-3] = 'E'; st[k-2] = '\0'; k -= 2;
+        printf("%s\t\t%s\t\tREDUCE E->(E)\n", st, in); return 1;
+    }
+    return 0;
+}
+
+int main() {
+    printf("Enter string (e.g., id+id*id): ");
+    scanf("%s", in); len = strlen(in);
+    printf("\nSTACK\t\tINPUT\t\tACTION\n-----\t\t-----\t\t------\n");
+    while (i < len || !(st[0] == 'E' && st[1] == '\0')) {
+        if (in[i] == 'i' && in[i+1] == 'd' && i + 1 < len) {
+            st[k] = 'i'; st[k+1] = 'd'; st[k+2] = '\0';
+            in[i] = in[i+1] = ' '; k += 2; i += 2;
+            printf("%s\t\t%s\t\tSHIFT id\n", st, in);
+            while (check());
+        } else if (i < len) {
+            st[k] = in[i]; char ch = in[i]; st[k+1] = '\0';
+            in[i] = ' '; k++; i++;
+            printf("%s\t\t%s\t\tSHIFT %c\n", st, in, ch);
+            while (check());
+        } else break;
+    }
+    if (st[0] == 'E' && st[1] == '\0') printf("\nACCEPT: Parsed successfully!\n");
+    else printf("\nREJECT: Parsing terminated with error.\n");
+    return 0;
+}</code></pre>
+
+  <h2>5. Examiner Viva Traps & Defense Points</h2>
+
+  <div class="callout">
+    <strong>Trap 1: Shift-Reduce Conflict vs. Reduce-Reduce Conflict</strong>
+    <ul>
+      <li><strong>Shift-Reduce Conflict:</strong> Occurs when the parser cannot decide whether to shift the next input symbol onto the stack or reduce the existing handle already on top of the stack. In the ambiguous grammar <code>E &rarr; E + E | E * E</code>, having <code>E + E</code> on the stack with <code>*</code> in the input creates a conflict: shifting <code>*</code> respects multiplication precedence, whereas reducing <code>E + E</code> enforces left-to-right evaluation. <em>Defense:</em> This C implementation resolves the conflict implicitly by greedily reducing any completed handle immediately before shifting.</li>
+      <li><strong>Reduce-Reduce Conflict:</strong> Occurs when the topmost symbols on the stack simultaneously match the right-hand sides of two distinct production rules (e.g., <code>A &rarr; id</code> and <code>B &rarr; id</code>). The parser cannot determine which non-terminal to substitute.</li>
+    </ul>
+  </div>
+
+  <div class="callout">
+    <strong>Trap 2: Why must <code>check()</code> run in a <code>while(check());</code> loop after each shift?</strong>
+    <p>A single shift operation can trigger a chain of <em>cascading reductions</em>. For example, in <code>id + id</code>, shifting the second <code>id</code> reduces it to <code>E</code>. Now the stack contains <code>E + E</code>. If we used an <code>if (check())</code>, the function would exit after reducing <code>id &rarr; E</code>, leaving <code>E + E</code> unreduced and causing premature parser termination or rejection. The <code>while (check());</code> ensures handle reduction repeats until the stack stabilizes.</p>
+  </div>
+
+  <div class="callout">
+    <strong>Trap 3: What is the purpose of the <code>k >= 2</code> and <code>k >= 3</code> guards?</strong>
+    <p>In C, negative array subscripting (e.g., <code>stack[-1]</code> when <code>k = 1</code>) accesses unallocated memory before the array boundary. Without boundary guards, checking <code>stack[k-3]</code> when only 1 symbol is on the stack causes undefined behavior, illegal memory dereferencing, or false handle matches with stack garbage.</p>
+  </div>
+
+  <div class="callout">
+    <strong>Trap 4: Why do we write <code>st[k-1] = '\0'</code> or <code>st[k-2] = '\0'</code> during reduction?</strong>
+    <p>C strings are terminated by the null byte. When replacing a 3-character handle (<code>E+E</code>) with a 1-character non-terminal (<code>E</code>), the stack length shrinks from <code>k</code> to <code>k - 2</code>. Setting <code>stack[k-2] = '\0'</code> guarantees that subsequent <code>printf("%s", stack)</code> calls will accurately print only the valid symbols on the stack without trailing orphaned characters.</p>
+  </div>
+
+  <div class="callout">
+    <strong>Trap 5: What exact conditions define Acceptance?</strong>
+    <p>Both conditions must hold simultaneously: (1) the input stream must be completely consumed (<code>i >= len</code>), and (2) the stack must contain solely the start symbol <code>E</code> (<code>stack[0] == 'E' && stack[1] == '\0'</code>).</p>
+  </div>
+
+  <div class="nav-links">
+    <a href="../index.html" class="nav-home">&larr; Home</a>
+    <a href="../lessons/0005-shift-reduce-parser-from-scratch.html">&larr; Return to Lesson 0005</a>
+    <a href="calc-lex-yacc-reference.html">LEX &amp; YACC Calculator Reference &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

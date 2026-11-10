@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSL411: Compiler Design Lab • Study Portal</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/theme.js"></script>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="kicker">KTU B.Tech CSE &bull; Semester 7 / S8 Lab</div>
+    <h1>CSL411: Compiler Design Lab</h1>
+    <p class="subtitle">Interactive Zero-Memorization Study Portal</p>
+  </header>
+
+  <div class="badge-row">
+    <span class="badge">📖 5 Core Programs</span>
+    <span class="badge">🧠 Mental Models &amp; Invariants</span>
+    <span class="badge">⚡ Blank-Sheet Recall</span>
+    <span class="badge">🎯 Viva Defense Prep</span>
+  </div>
+
+  <div class="callout">
+    <strong>Zero-Memorization Guarantee:</strong> Standard university exams force rote memorization of syntax. This portal breaks down every program into its foundational mental model, algorithmic invariants, and data structures so you can write bug-free C, LEX, and YACC code on a completely blank sheet or terminal without notes.
+  </div>
+
+  <h2>1. Core Laboratory Programs</h2>
+  <p>Select any program below to explore the interactive step-by-step lesson with mental models and diagnostic quizzes, or open the quick reference cheat sheet for rapid exam-day revision:</p>
+
+  <div class="program-list">
+    <!-- Program 1 -->
+    <div class="program-card">
+      <div class="program-header">
+        <span class="program-num">01</span>
+        <h3 class="program-title">Calculator Using LEX &amp; YACC</h3>
+      </div>
+      <p class="program-desc">
+        Deconstruct the three-way handshake between the scanner (<code>calc.l</code>) and parser (<code>calc.y</code>). Master <code>yylval</code> communication, <code>y.tab.h</code> token generation, and bottom-up operator precedence disambiguation.
+      </p>
+      <div class="program-actions">
+        <a href="lessons/0001-calculator-lex-yacc-from-scratch.html" class="btn btn-primary">Open Lesson &rarr;</a>
+        <a href="reference/calc-lex-yacc-reference.html" class="btn btn-secondary">Cheat Sheet &rarr;</a>
+      </div>
+    </div>
+
+    <!-- Program 2 -->
+    <div class="program-card">
+      <div class="program-header">
+        <span class="program-num">02</span>
+        <h3 class="program-title">Constant Propagation &amp; Folding</h3>
+      </div>
+      <p class="program-desc">
+        The quadruple spreadsheet data model (<code>op</code>, <code>op1</code>, <code>op2</code>, <code>res</code>, <code>flag</code>), compile-time folding guards (<code>isdigit()</code>), and the forward substitution domino effect that cascades computed constants into future instructions.
+      </p>
+      <div class="program-actions">
+        <a href="lessons/0002-constant-propagation-from-scratch.html" class="btn btn-primary">Open Lesson &rarr;</a>
+        <a href="reference/constant-propagation-reference.html" class="btn btn-secondary">Cheat Sheet &rarr;</a>
+      </div>
+    </div>
+
+    <!-- Program 3 -->
+    <div class="program-card">
+      <div class="program-header">
+        <span class="program-num">03</span>
+        <h3 class="program-title">FIRST Set of Grammar</h3>
+      </div>
+      <p class="program-desc">
+        Recursive descent parsing over context-free productions. Master string indexing (why <code>p[i][2]</code> is the first RHS symbol), uppercase non-terminal recursion, epsilon (<code>$</code>) bubbling, and duplicate symbol suppression.
+      </p>
+      <div class="program-actions">
+        <a href="lessons/0003-first-set-of-grammar-from-scratch.html" class="btn btn-primary">Open Lesson &rarr;</a>
+        <a href="reference/first-of-grammar-reference.html" class="btn btn-secondary">Cheat Sheet &rarr;</a>
+      </div>
+    </div>
+
+    <!-- Program 4 -->
+    <div class="program-card">
+      <div class="program-header">
+        <span class="program-num">04</span>
+        <h3 class="program-title">Intermediate Code Generator (TAC)</h3>
+      </div>
+      <p class="program-desc">
+        Synthesizing linearized Three-Address Code instructions. Understand the two-pass operator precedence scanner (evaluating <code>*</code>, <code>/</code> before <code>+</code>, <code>-</code>) and relational branching code templates (<code>if true goto...</code>).
+      </p>
+      <div class="program-actions">
+        <a href="lessons/0004-intermediate-code-generator-from-scratch.html" class="btn btn-primary">Open Lesson &rarr;</a>
+        <a href="reference/intermediate-code-reference.html" class="btn btn-secondary">Cheat Sheet &rarr;</a>
+      </div>
+    </div>
+
+    <!-- Program 5 -->
+    <div class="program-card">
+      <div class="program-header">
+        <span class="program-num">05</span>
+        <h3 class="program-title">Shift-Reduce Parser</h3>
+      </div>
+      <p class="program-desc">
+        Bottom-up stack automaton simulation. Master the shift step, the <code>while(check())</code> cascading reduction guard, the <code>k &gt;= 3</code> negative array indexing memory guard, and the final string acceptance condition.
+      </p>
+      <div class="program-actions">
+        <a href="lessons/0005-shift-reduce-parser-from-scratch.html" class="btn btn-primary">Open Lesson &rarr;</a>
+        <a href="reference/shift-reduce-reference.html" class="btn btn-secondary">Cheat Sheet &rarr;</a>
+      </div>
+    </div>
+  </div>
+
+  <h2>2. Quick Program Matrix</h2>
+  <div class="table-responsive">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Program Name</th>
+          <th>Implementation</th>
+          <th>Core Invariant / Model</th>
+          <th>Quick Links</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>01</strong></td>
+          <td>Calculator</td>
+          <td>LEX &amp; YACC</td>
+          <td><code>yylval</code> value mailbox, <code>y.tab.h</code> header, <code>%left</code> precedence</td>
+          <td><a href="lessons/0001-calculator-lex-yacc-from-scratch.html">Lesson</a> &bull; <a href="reference/calc-lex-yacc-reference.html">Cheat Sheet</a></td>
+        </tr>
+        <tr>
+          <td><strong>02</strong></td>
+          <td>Constant Propagation</td>
+          <td>ANSI C</td>
+          <td>Quadruple spreadsheet rows, <code>isdigit()</code> folding guard, forward replace</td>
+          <td><a href="lessons/0002-constant-propagation-from-scratch.html">Lesson</a> &bull; <a href="reference/constant-propagation-reference.html">Cheat Sheet</a></td>
+        </tr>
+        <tr>
+          <td><strong>03</strong></td>
+          <td>FIRST of Grammar</td>
+          <td>ANSI C</td>
+          <td>Index <code>p[i][2]</code>, <code>isupper()</code> non-terminal recursion, <code>addToResultSet()</code></td>
+          <td><a href="lessons/0003-first-set-of-grammar-from-scratch.html">Lesson</a> &bull; <a href="reference/first-of-grammar-reference.html">Cheat Sheet</a></td>
+        </tr>
+        <tr>
+          <td><strong>04</strong></td>
+          <td>Intermediate Code (TAC)</td>
+          <td>ANSI C</td>
+          <td>Precedence scanning (<code>*</code>, <code>/</code> &rarr; <code>+</code>, <code>-</code>), relational jumps</td>
+          <td><a href="lessons/0004-intermediate-code-generator-from-scratch.html">Lesson</a> &bull; <a href="reference/intermediate-code-reference.html">Cheat Sheet</a></td>
+        </tr>
+        <tr>
+          <td><strong>05</strong></td>
+          <td>Shift-Reduce Parser</td>
+          <td>ANSI C</td>
+          <td>Stack automaton, <code>while(check())</code> cascading reductions, <code>k &gt;= 3</code> boundary guard</td>
+          <td><a href="lessons/0005-shift-reduce-parser-from-scratch.html">Lesson</a> &bull; <a href="reference/shift-reduce-reference.html">Cheat Sheet</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>3. Terminal Compilation Cheat-Sheet</h2>
+  <p>Copy-pasteable build commands for POSIX / Linux terminals (Ubuntu, Debian, macOS, or WSL):</p>
+
+  <div class="terminal-card">
+    <div class="terminal-header">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span>Terminal &bull; Compilation Pipelines</span>
+    </div>
+    <pre><code># --- 1. LEX &amp; YACC Calculator Pipeline ---
+yacc -d calc.y                  # Generates y.tab.c and y.tab.h
+lex calc.l                      # Generates lex.yy.c
+gcc lex.yy.c y.tab.c -w -o calc # Links tokenizer + grammar
+./calc                          # Run interactive calculator
+
+# --- 2. Constant Propagation &amp; Folding ---
+gcc constant_propagation.c -o const_prop &amp;&amp; ./const_prop
+
+# --- 3. FIRST Set of Grammar ---
+gcc first_of_grammar.c -o first_set &amp;&amp; ./first_set
+
+# --- 4. Intermediate Code Generator (Three-Address Code) ---
+gcc intermediate_code.c -o icg &amp;&amp; ./icg
+
+# --- 5. Shift-Reduce Parser ---
+gcc shift_reduce_parser.c -o srp &amp;&amp; ./srp</code></pre>
+  </div>
+
+  <h2>4. Study Principles &amp; Resources</h2>
+  <div class="diagram-box">
+    <h3 style="margin-top: 0;">Learning Methodology &amp; Reference Material</h3>
+    <p>This portal is engineered based on proven cognitive learning principles: spatial mental models, structural invariants, and active diagnostic recall.</p>
+    <ul>
+      <li>
+        <strong><a href="MISSION.md">Lab Mission &amp; Viva Traps (MISSION.md)</a>:</strong> Read the core mission statement, the 60-second explanation framework, and typical viva traps examiners set during lab exams.
+      </li>
+      <li>
+        <strong><a href="RESOURCES.md">Curated Primary Literature (RESOURCES.md)</a>:</strong> Primary textbook chapters (Dragon Book Ch 4 &amp; 6, O'Reilly <em>lex &amp; yacc</em>), official GNU Bison documentation, and online compiler communities.
+      </li>
+      <li>
+        <strong><a href="NOTES.md">Quick Revision Notes (NOTES.md)</a>:</strong> Dense summary of KTU exam patterns and evaluation rubrics.
+      </li>
+    </ul>
+  </div>
+
+  <footer>
+    <div>
+      <strong>CSL411: Compiler Design Lab</strong> &bull; Zero-Memorization Portal
+    </div>
+    <div>
+      <a href="#">&uarr; Back to Top</a>
+    </div>
+  </footer>
+</div>
+</body>
+</html>

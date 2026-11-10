@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reference: Constant Propagation & Folding Architecture</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/theme.js"></script>
+  <style>
+    @media print {
+      body { padding: 0; font-size: 14px; }
+      .nav-links, .theme-toggle-wrapper { display: none; }
+      pre { border: 1px solid #ccc; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="kicker"><a href="../index.html" class="kicker-home">&larr; Home</a> &bull; Reference Document &bull; CSL411</div>
+    <h1>Constant Propagation Cheat Sheet</h1>
+    <p class="subtitle">Quadruple specifications, evaluation guards, and forward propagation mechanics.</p>
+  </header>
+
+  <h2>1. Quadruple Representation</h2>
+  <div class="diagram-box">
+    <p>Each intermediate code statement is stored as an instance of <code>struct expression</code>:</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Type</th>
+          <th>Example</th>
+          <th>Role in Optimization</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>op</code></td>
+          <td><code>char[2]</code></td>
+          <td><code>"+"</code>, <code>"="</code></td>
+          <td>Operator applied to operands (or assignment).</td>
+        </tr>
+        <tr>
+          <td><code>op1</code></td>
+          <td><code>char[5]</code></td>
+          <td><code>"3"</code>, <code>"a"</code></td>
+          <td>First operand (can start as variable and be overwritten with digit).</td>
+        </tr>
+        <tr>
+          <td><code>op2</code></td>
+          <td><code>char[5]</code></td>
+          <td><code>"5"</code>, <code>"?"</code></td>
+          <td>Second operand (dummy placeholder <code>"?"</code> for direct assignments).</td>
+        </tr>
+        <tr>
+          <td><code>res</code></td>
+          <td><code>char[5]</code></td>
+          <td><code>"b"</code></td>
+          <td>Target identifier where computed value was assigned.</td>
+        </tr>
+        <tr>
+          <td><code>flag</code></td>
+          <td><code>int</code></td>
+          <td><code>0</code> or <code>1</code></td>
+          <td><code>0</code> = active (retained in output); <code>1</code> = eliminated (folded).</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>2. Complete Reconstructible C Code (Minimal Form)</h2>
+  <pre><code>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;ctype.h&gt;
+
+struct expression {
+    char op[2], op1[5], op2[5], res[5];
+    int flag;
+} arr[10];
+int n;
+
+void change(int i, int res) {
+    char buf[5];
+    sprintf(buf, "%d", res);
+    for (int j = i + 1; j < n; j++) {
+        if (strcmp(arr[i].res, arr[j].op1) == 0) strcpy(arr[j].op1, buf);
+        if (strcmp(arr[i].res, arr[j].op2) == 0) strcpy(arr[j].op2, buf);
+    }
+}
+
+void constant() {
+    for (int i = 0; i < n; i++) {
+        if ((isdigit(arr[i].op1[0]) && isdigit(arr[i].op2[0])) ||
+            (strcmp(arr[i].op, "=") == 0 && isdigit(arr[i].op1[0]))) {
+            
+            int v1 = atoi(arr[i].op1), v2 = atoi(arr[i].op2), ans = 0;
+            switch (arr[i].op[0]) {
+                case '+': ans = v1 + v2; break;
+                case '-': ans = v1 - v2; break;
+                case '*': ans = v1 * v2; break;
+                case '/': ans = (v2 != 0) ? v1 / v2 : 0; break;
+                case '=': ans = v1; break;
+            }
+            arr[i].flag = 1;
+            change(i, ans);
+        }
+    }
+}
+
+int main() {
+    printf("Enter number of expressions: ");
+    scanf("%d", &n);
+    printf("Enter quadruples (op op1 op2 res):\n");
+    for (int i = 0; i < n; i++) {
+        scanf("%s %s %s %s", arr[i].op, arr[i].op1, arr[i].op2, arr[i].res);
+        arr[i].flag = 0;
+    }
+    constant();
+    printf("\nOptimized Code:\n");
+    for (int i = 0; i < n; i++) {
+        if (arr[i].flag == 0) {
+            printf("%s %s %s %s\n", arr[i].op, arr[i].op1, arr[i].op2, arr[i].res);
+        }
+    }
+    return 0;
+}</code></pre>
+
+  <h2>3. Viva Traps & Examiner Checkpoints</h2>
+  <ul>
+    <li><strong>Folding vs. Propagation:</strong> Folding is the compile-time calculation of arithmetic on numeric literals (e.g., $3 + 5 \to 8$). Propagation is the forward substitution of the known constant into subsequent statements referencing that variable.</li>
+    <li><strong>Forward-Only Loop ($j = i + 1$):</strong> Propagation must never scan backwards. In straight-line code, instructions prior to row $i$ precede the assignment and cannot see the new value.</li>
+    <li><strong>Dead Code Elimination:</strong> Setting <code>flag = 1</code> suppresses printing of redundant assignments, effectively performing basic-block dead-code elimination.</li>
+    <li><strong>Single-Pass Limitation:</strong> If an expression in row $k$ becomes constant because of later evaluations in a non-topological schedule, a single forward pass will not catch it. Full optimizers iterate until reaching a fixed point.</li>
+  </ul>
+
+  <div class="nav-links">
+    <a href="../index.html" class="nav-home">&larr; Home</a>
+    <a href="../lessons/0002-constant-propagation-from-scratch.html">&larr; Return to Lesson 0002</a>
+    <a href="first-of-grammar-reference.html">Next: FIRST Set Reference &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

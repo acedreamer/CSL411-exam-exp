@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 0003: FIRST Set of Grammar From Scratch</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/theme.js"></script>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="kicker"><a href="../index.html" class="kicker-home">&larr; Home</a> &bull; Lesson 0003 &bull; Compiler Design Lab</div>
+    <h1>FIRST Set of Grammar From Scratch</h1>
+    <p class="subtitle">The telephone tree mental model, recursive base cases, set deduplication, and predictive parsing foundations.</p>
+  </header>
+
+  <div class="callout">
+    <strong>Mission Alignment:</strong> Your objective is to write the complete C program for computing the FIRST set of any Context-Free Grammar (CFG) from memory on paper or a terminal. By the end of this lesson, you will master the two recursive base cases, the <code>LHS=RHS</code> array indexing contract, and the set deduplication invariant.
+  </div>
+
+  <h2>1. The Mental Model: The Telephone Tree Detective</h2>
+  <p>To master the FIRST set algorithm without memorizing code, picture a detective interrogating symbols in a grammar with one single question:</p>
+  
+  <div class="diagram-box">
+    <p style="font-size: 1.15rem; font-weight: bold; margin-bottom: 8px;">"What is the very first terminal character you can say when you speak?"</p>
+    <ul>
+      <li><strong>Case A (The Terminal):</strong> If the detective asks a terminal like <code>'i'</code>, <code>'+'</code>, or <code>'('</code>, it answers immediately: <em>"I can only speak for myself! My first character is <code>'i'</code>."</em> No phone calls required. This is our <strong>base case</strong>.</li>
+      <li><strong>Case B (The Non-Terminal):</strong> If the detective asks a non-terminal like <code>E</code>, it cannot speak directly. It checks its production rule <code>E=TX</code> and says: <em>"I defer to my leading child <code>T</code>. Let me call <code>T</code> on the telephone and ask what it can say!"</em></li>
+      <li><strong>The Chain:</strong> Detective calls <code>T</code>. <code>T</code> checks <code>T=FY</code> and calls <code>F</code>. <code>F</code> checks <code>F=(E)</code> and <code>F=i</code>. Aha! <code>F</code> begins with <code>'('</code> and <code>'i'</code>, which are terminals. <code>F</code> tells <code>T</code>, and <code>T</code> tells <code>E</code>.</li>
+      <li><strong>The Vanishing Act (Epsilon <code>$</code>):</strong> If a rule says <code>X=$</code>, the symbol says: <em>"I can vanish into thin air!"</em> It contributes <code>'$'</code> to the set so the parser knows this symbol is nullable.</li>
+    </ul>
+  </div>
+
+  <h2>2. The Data Contract: Fixed-Format Production Indexing</h2>
+  <p>The program stores grammar rules as simple strings in a 2D character array <code>char p[20][20]</code>. Every rule is entered in rigid <code>LHS=RHS</code> format:</p>
+
+  <div class="diagram-box">
+    <code>Index: &nbsp; [0] &nbsp; &nbsp; [1] &nbsp; &nbsp; [2] &nbsp; &nbsp; [3] ...</code><br>
+    <code>Rule: &nbsp; &nbsp; E &nbsp; &nbsp; &nbsp; = &nbsp; &nbsp; &nbsp; T &nbsp; &nbsp; &nbsp; X</code>
+    <p style="margin-top: 12px; margin-bottom: 0;">Notice the fixed index invariant:</p>
+    <ul>
+      <li><code>p[i][0]</code> is <strong>always</strong> the Left-Hand Side (LHS) non-terminal symbol.</li>
+      <li><code>p[i][1]</code> is <strong>always</strong> the separator character <code>'='</code>.</li>
+      <li><code>p[i][2]</code> is <strong>always</strong> the all-important leading symbol of the Right-Hand Side (RHS).</li>
+    </ul>
+  </div>
+
+  <p>To distinguish non-terminals from terminals, the program uses the standard C library function <code>isupper()</code> from <code>&lt;ctype.h&gt;</code>:</p>
+  <ul>
+    <li><code>isupper(c) == true</code> &rarr; Non-terminal (uppercase English letters <code>'A'</code> through <code>'Z'</code>).</li>
+    <li><code>!isupper(c) == true</code> &rarr; Terminal token (lowercase letters, operators like <code>'+'</code>, <code>'*'</code>, brackets <code>'('</code>, <code>')'</code>, and the epsilon marker <code>'$'</code>).</li>
+  </ul>
+
+  <h2>3. Deconstructing <code>first(char c)</code>: Two Essential Branches</h2>
+  <p>The entire FIRST computation engine fits into 15 lines of clean C. It contains exactly two core branches:</p>
+
+  <pre><code>void first(char c) {
+    /* Case 1: Terminal base case (leaf node) */
+    if (!isupper(c)) {
+        add_to_result(c);
+        return;
+    }
+    
+    /* Case 2: Non-terminal recursive expansion */
+    for (int i = 0; i < n; i++) {
+        if (p[i][0] == c) {
+            if (p[i][2] == '$') {
+                add_to_result('$');          /* Sub-case 2a: Derives epsilon directly */
+            } else if (!isupper(p[i][2])) {
+                add_to_result(p[i][2]);      /* Sub-case 2b: RHS starts with terminal */
+            } else {
+                first(p[i][2]);              /* Sub-case 2c: RHS starts with non-terminal */
+            }
+        }
+    }
+}</code></pre>
+
+  <p>Trace the elegance of this structure: if <code>p[i][2]</code> is a non-terminal, we recursively invoke <code>first(p[i][2])</code>. That recursive call will either hit a terminal base case (adding it to <code>f</code>) or chain further down until leaf terminals are reached.</p>
+
+  <h2>4. Set Deduplication: <code>add_to_result(char ch)</code></h2>
+  <p>In set theory, duplicates are mathematically forbidden: $\{ i, (, i \}$ must be stored simply as $\{ i, ( \}$. To enforce this, results are never written directly to <code>f[m++]</code> without a uniqueness guard:</p>
+
+  <pre><code>void add_to_result(char ch) {
+    for (int i = 0; i < m; i++) {
+        if (f[i] == ch) return; /* Symbol already present: drop duplicate */
+    }
+    f[m++] = ch;                /* New unique symbol: append and increment */
+}</code></pre>
+
+  <div class="callout">
+    <strong>Exam Reminder:</strong> Before computing the FIRST set for a new non-terminal symbol in <code>main()</code>, you must reset the counter: <code>m = 0;</code>. Otherwise, results from earlier queries will contaminate the next set!
+  </div>
+
+  <h2>5. Complete Execution Trace: Standard KTU Grammar</h2>
+  <p>Consider the classic expression grammar with left recursion eliminated:</p>
+  <pre><code>1: E=TX     2: X=+TX    3: X=$
+4: T=FY     5: Y=*FY    6: Y=$
+7: F=(E)    8: F=i</code></pre>
+
+  <div class="diagram-box">
+    <p><strong>Query: <code>first('E')</code></strong></p>
+    <ol>
+      <li><code>'E'</code> is uppercase &rarr; Scan productions for LHS <code>'E'</code>. Rule 1 matches: <code>E=TX</code>.</li>
+      <li>Leading RHS is <code>p[0][2] = 'T'</code> (uppercase) &rarr; Recursively call <code>first('T')</code>.</li>
+      <li>In <code>first('T')</code>: Rule 4 matches: <code>T=FY</code>. Leading RHS is <code>'F'</code> &rarr; Recursively call <code>first('F')</code>.</li>
+      <li>In <code>first('F')</code>:
+        <ul>
+          <li>Rule 7 matches: <code>F=(E)</code>. Leading RHS is <code>'('</code> &rarr; <code>!isupper('(')</code> is true &rarr; Append <code>'('</code> to set.</li>
+          <li>Rule 8 matches: <code>F=i</code>. Leading RHS is <code>'i'</code> &rarr; <code>!isupper('i')</code> is true &rarr; Append <code>'i'</code> to set.</li>
+        </ul>
+      </li>
+      <li>Calls unwind back to <code>first('T')</code> and then <code>first('E')</code>.</li>
+      <li><strong>Result:</strong> <code>FIRST(E) = { (, i }</code>.</li>
+    </ol>
+  </div>
+
+  <h2>6. Interactive Mastery Check</h2>
+  <p>Test your understanding of the recursion invariants and data structures. Choose the exact answer to each diagnostic question:</p>
+
+  <!-- Quiz Question 1 -->
+  <div class="quiz-container" id="q1">
+    <div class="quiz-title">Question 1</div>
+    <div class="quiz-question">Why does the algorithm inspect character <code>p[i][2]</code> rather than <code>p[i][1]</code> when parsing production <code>p[i]</code>?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q1', 0, false, 'Incorrect. Index 0 holds the LHS non-terminal, not rule termination.')">The first character contains rule termination</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 1, true, 'Correct! In LHS=RHS format, index 0 is LHS, index 1 is \'=\', and index 2 begins RHS.')">Position one holds the equality symbol</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 2, false, 'Incorrect. Index 2 holds the leading RHS symbol, not the target non-terminal.')">Position two stores the target nonterminal</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 3, false, 'Incorrect. Character indexing is dictated strictly by string formatting.')">Compilers require odd numbered string indices</div>
+    </div>
+    <div class="quiz-feedback" id="q1-feedback"></div>
+  </div>
+
+  <!-- Quiz Question 2 -->
+  <div class="quiz-container" id="q2">
+    <div class="quiz-title">Question 2</div>
+    <div class="quiz-question">What failure occurs if a grammar containing direct left recursion such as <code>E=E+T</code> is provided?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q2', 0, false, 'Incorrect. The program will not complete with wrong answers; it hangs and crashes.')">The program halts with wrong results</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 1, false, 'Incorrect. The lab C code performs no automatic grammar validation or warnings.')">Grammar validation triggers immediate syntax warnings</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 2, true, 'Correct! first(\'E\') calls first(p[i][2]) which is first(\'E\'), recursing infinitely until stack overflow.')">Infinite recursion causes a stack overflow</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 3, false, 'Incorrect. Deduplication only checks symbols added to f; it does not stop recursion.')">Duplicate elimination routine discards every symbol</div>
+    </div>
+    <div class="quiz-feedback" id="q2-feedback"></div>
+  </div>
+
+  <!-- Quiz Question 3 -->
+  <div class="quiz-container" id="q3">
+    <div class="quiz-title">Question 3</div>
+    <div class="quiz-question">How does the program distinguish non-terminal variables from terminal tokens and the epsilon character <code>$</code>?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q3', 0, true, 'Correct! Non-terminals are uppercase letters (A-Z) where isupper() is true; terminals and \'$\' evaluate to false.')">Uppercase letters represent nonterminals via isupper</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 1, false, 'Incorrect. The program does not maintain an external terminal lookup table.')">External lookup tables store valid terminals</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 2, false, 'Incorrect. String length plays no role in distinguishing symbol categories.')">String length determines token syntactic category</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 3, false, 'Incorrect. The C program is standalone and does not invoke a lexical analyzer.')">Lexical analyzer registers all terminal types</div>
+    </div>
+    <div class="quiz-feedback" id="q3-feedback"></div>
+  </div>
+
+  <h2>7. Recommended Primary Source</h2>
+  <p>To understand how FIRST and FOLLOW sets are used to construct LL(1) predictive parsing tables and detect grammar conflicts, study <strong>Chapter 4 (Syntax Analysis), Section 4.4</strong> in <em>Compilers: Principles, Techniques, and Tools</em> (The Dragon Book) by Aho, Lam, Sethi, & Ullman.</p>
+
+  <div class="callout">
+    <strong>Need Help?</strong> You can toggle the theme using the button in the top right. If you have any doubts about how recursion unwinds or how to handle nullable non-terminals, ask your teacher agent right now!
+  </div>
+
+  <div class="nav-links">
+    <a href="0002-constant-propagation-from-scratch.html">&larr; Lesson 0002: Constant Propagation</a>
+    <a href="../index.html" class="nav-home">&larr; Home</a>
+    <a href="../reference/first-of-grammar-reference.html">Reference Sheet</a>
+    <a href="0004-intermediate-code-generator-from-scratch.html">Lesson 0004: Intermediate Code &rarr;</a>
+  </div>
+</div>
+
+<script>
+function checkAnswer(questionId, selectedIdx, isCorrect, explanation) {
+  const container = document.getElementById(questionId);
+  const options = container.querySelectorAll('.quiz-option');
+  const feedback = document.getElementById(questionId + '-feedback');
+  
+  options.forEach((opt, idx) => {
+    opt.classList.remove('correct', 'incorrect');
+    if (idx === selectedIdx) {
+      opt.classList.add(isCorrect ? 'correct' : 'incorrect');
+    }
+  });
+  
+  feedback.style.display = 'block';
+  feedback.style.backgroundColor = isCorrect ? 'var(--success-bg)' : 'var(--error-bg)';
+  feedback.style.color = isCorrect ? 'var(--success)' : 'var(--error)';
+  feedback.innerHTML = (isCorrect ? '<strong>✓ Correct!</strong> ' : '<strong>✗ Incorrect.</strong> ') + explanation;
+}
+</script>
+</body>
+</html>

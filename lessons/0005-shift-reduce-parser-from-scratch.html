@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 0005: Shift-Reduce Parser From Scratch</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/theme.js"></script>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="kicker"><a href="../index.html" class="kicker-home">&larr; Home</a> &bull; Lesson 0005 &bull; Compiler Design Lab</div>
+    <h1>Shift-Reduce Parser From Scratch</h1>
+    <p class="subtitle">Bottom-up handle pruning, dual-pointer stack mechanics, and cascading reduction loops.</p>
+  </header>
+
+  <div class="callout">
+    <strong>Mission Alignment:</strong> Your objective is to write the complete C program for a Shift-Reduce Parser on a blank sheet or empty terminal without notes. By the end of this 10-minute lesson, you will master the two cooperating engines: the <code>check()</code> handle pruner and the <code>main()</code> shift-loop driver.
+  </div>
+
+  <h2>1. The Mental Model: The Tetris Conveyor Belt</h2>
+  <p>Top-down parsers (like Recursive Descent or LL(1)) try to predict the parse tree from the root down to the leaves. <strong>Bottom-up parsers do the exact opposite:</strong> they begin at the leaves (the raw input tokens) and assemble them upward until only the root symbol <code>E</code> remains.</p>
+
+  <p>Think of bottom-up parsing like a game of <strong>Tetris with Russian nesting dolls</strong>:</p>
+
+  <div class="diagram-box">
+    <ol>
+      <li><strong>SHIFT (Feed a block):</strong> You slide blocks from the input stream onto a LIFO conveyor belt (the stack). As long as the blocks on top don't form a recognizable shape, you keep shifting new tokens in.</li>
+      <li><strong>REDUCE (Snap and collapse):</strong> The instant the top blocks form a recognized grammar pattern (a <em>handle</em>, such as <code>id</code>, <code>E + E</code>, <code>E * E</code>, or <code>(E)</code>), BAM! The entire sequence snaps together and collapses into a single golden block: <code>E</code>.</li>
+      <li><strong>CASCADE (Chain reaction):</strong> That newly collapsed <code>E</code> might now complete another combination with older blocks sitting underneath it! The parser immediately collapses that combo too, looping until no further reduction is possible.</li>
+      <li><strong>ACCEPT (Victory):</strong> When all input blocks have been shifted, the input stream is empty, and exactly one golden <code>E</code> sits on the stack, the parse is complete and accepted.</li>
+    </ol>
+  </div>
+
+  <h2>2. The Data Architecture: Two Pointers on Arrays</h2>
+  <p>Unlike complex parser generators that require multi-state transition tables, a handwritten shift-reduce parser in C relies on two simple character arrays and two integer pointers:</p>
+
+  <pre><code>char input[50];  /* The input token buffer (e.g. "id+id*id") */
+char stack[50];  /* The LIFO parsing stack */
+int k = 0;       /* Stack top pointer (current stack length / next push index) */
+int i = 0;       /* Input read pointer (scans tokens left to right) */
+int len;         /* Total length of the input string */</code></pre>
+
+  <div class="callout">
+    <strong>The In-Place Blanking Trick:</strong> When the parser shifts a character from <code>input[i]</code> to <code>stack[k]</code>, it replaces <code>input[i] = ' '</code>. Why? When <code>printf("%s", input)</code> is executed at each step, the terminal displays only the <em>remaining unread tokens</em>, creating a beautiful scrolling animation in the tabular output!
+  </div>
+
+  <h2>3. Engine 1: <code>check()</code> — The Handle Pruner</h2>
+  <p>In compiler theory, a <strong>handle</strong> is a substring on the stack that matches the right-hand side of a production rule whose reduction represents one step along the reverse of a rightmost derivation.</p>
+
+  <p>The <code>check()</code> subroutine inspects the topmost symbols of <code>stack</code> using a lookback window. If a handle is discovered, it executes three atomic steps:</p>
+  <ol>
+    <li>Replaces the leftmost character of the handle with <code>'E'</code>.</li>
+    <li>Null-terminates the string immediately after <code>'E'</code>.</li>
+    <li>Adjusts stack pointer <code>k</code> backward and returns <code>1</code> (signaling a reduction occurred).</li>
+  </ol>
+
+  <pre><code>int check() {
+    /* 1. Handle: E -> id (Length 2) */
+    if (k >= 2 && stack[k - 1] == 'd' && stack[k - 2] == 'i') {
+        stack[k - 2] = 'E';      /* Replace 'i' with 'E' */
+        stack[k - 1] = '\0';     /* Terminate string */
+        k = k - 1;               /* Stack shrinks by 1 (2 chars become 1) */
+        printf("%s\t\t%s\t\tREDUCE E->id\n", stack, input);
+        return 1;
+    }
+    /* 2. Handle: E -> E + E (Length 3) */
+    else if (k >= 3 && stack[k - 1] == 'E' && stack[k - 2] == '+' && stack[k - 3] == 'E') {
+        stack[k - 3] = 'E';      /* Replace first 'E' with 'E' */
+        stack[k - 2] = '\0';     /* Terminate string */
+        k = k - 2;               /* Stack shrinks by 2 (3 chars become 1) */
+        printf("%s\t\t%s\t\tREDUCE E->E+E\n", stack, input);
+        return 1;
+    }
+    /* 3. Handle: E -> E * E (Length 3) */
+    else if (k >= 3 && stack[k - 1] == 'E' && stack[k - 2] == '*' && stack[k - 3] == 'E') {
+        stack[k - 3] = 'E';
+        stack[k - 2] = '\0';
+        k = k - 2;
+        printf("%s\t\t%s\t\tREDUCE E->E*E\n", stack, input);
+        return 1;
+    }
+    /* 4. Handle: E -> (E) (Length 3) */
+    else if (k >= 3 && stack[k - 1] == ')' && stack[k - 2] == 'E' && stack[k - 3] == '(') {
+        stack[k - 3] = 'E';
+        stack[k - 2] = '\0';
+        k = k - 2;
+        printf("%s\t\t%s\t\tREDUCE E->(E)\n", stack, input);
+        return 1;
+    }
+    return 0; /* No handle found on top of stack */
+}</code></pre>
+
+  <div class="callout">
+    <strong>Crucial Safety Invariant:</strong> Notice the boundary checks <code>k >= 2</code> and <code>k >= 3</code>. If the stack only contains one character (<code>k == 1</code>) and you check <code>stack[k - 3]</code>, C accesses <code>stack[-2]</code>! This causes undefined behavior, illegal memory dereferencing, or false matches with garbage memory.
+  </div>
+
+  <h2>4. Engine 2: The Main Parsing Loop & Cascades</h2>
+  <p>The parser operates in a <code>while</code> loop as long as unconsumed input exists OR the stack has not yet reduced cleanly to <code>"E"</code>:</p>
+
+  <pre><code>while (i < len || !(stack[0] == 'E' && stack[1] == '\0')) {
+    /* Case A: Terminal is the two-character identifier "id" */
+    if (input[i] == 'i' && input[i + 1] == 'd' && (i + 1) < len) {
+        stack[k] = input[i];
+        stack[k + 1] = input[i + 1];
+        stack[k + 2] = '\0';
+        input[i] = ' ';
+        input[i + 1] = ' ';
+        k += 2;
+        i += 2;
+        printf("%s\t\t%s\t\tSHIFT id\n", stack, input);
+        while (check()); /* Cascading reduction loop! */
+    }
+    /* Case B: Single-character terminal (+, *, (, )) */
+    else if (i < len) {
+        stack[k] = input[i];
+        char temp = input[i];
+        stack[k + 1] = '\0';
+        input[i] = ' ';
+        k++;
+        i++;
+        printf("%s\t\t%s\t\tSHIFT %c\n", stack, input, temp);
+        while (check()); /* Cascading reduction loop! */
+    } 
+    else {
+        printf("\nREJECT: String cannot be parsed.\n");
+        return 0;
+    }
+}</code></pre>
+
+  <div class="callout">
+    <strong>The Magic of <code>while (check());</code>:</strong> Why a <code>while</code> loop instead of an <code>if</code>? Consider shifting the second <code>id</code> in <code>id + id</code>. The stack becomes <code>E + id</code>.
+    <ul>
+      <li>First pass of <code>check()</code>: Identifies handle <code>id</code> &rarr; reduces to <code>E</code>. Stack is now <code>E + E</code>. <code>check()</code> returns <code>1</code>.</li>
+      <li>Second pass of <code>check()</code>: The loop runs again! It finds handle <code>E + E</code> &rarr; reduces to <code>E</code>. <code>check()</code> returns <code>1</code>.</li>
+      <li>Third pass of <code>check()</code>: No handle matches <code>E</code>. <code>check()</code> returns <code>0</code>, breaking the loop.</li>
+    </ul>
+    A single <code>if</code> would have left <code>E + E</code> stuck on the stack!
+  </div>
+
+  <h2>5. Complete Execution Trace: <code>id+id*id</code></h2>
+  <p>Here is the exact step-by-step trace generated by the parser for the input expression <code>id+id*id</code>:</p>
+
+  <div class="diagram-box">
+    <table>
+      <thead>
+        <tr>
+          <th>Step</th>
+          <th>Stack</th>
+          <th>Input Buffer</th>
+          <th>Action Executed</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td><code>id</code></td>
+          <td><code>  +id*id</code></td>
+          <td><strong>SHIFT</strong> id</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td><code>E</code></td>
+          <td><code>  +id*id</code></td>
+          <td><strong>REDUCE</strong> E &rarr; id</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td><code>E+</code></td>
+          <td><code>   id*id</code></td>
+          <td><strong>SHIFT</strong> +</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td><code>E+id</code></td>
+          <td><code>     *id</code></td>
+          <td><strong>SHIFT</strong> id</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td><code>E+E</code></td>
+          <td><code>     *id</code></td>
+          <td><strong>REDUCE</strong> E &rarr; id</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td><code>E</code></td>
+          <td><code>     *id</code></td>
+          <td><strong>REDUCE</strong> E &rarr; E+E <em>(Greedy Reduction)</em></td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td><code>E*</code></td>
+          <td><code>      id</code></td>
+          <td><strong>SHIFT</strong> *</td>
+        </tr>
+        <tr>
+          <td>8</td>
+          <td><code>E*id</code></td>
+          <td><code>        </code></td>
+          <td><strong>SHIFT</strong> id</td>
+        </tr>
+        <tr>
+          <td>9</td>
+          <td><code>E*E</code></td>
+          <td><code>        </code></td>
+          <td><strong>REDUCE</strong> E &rarr; id</td>
+        </tr>
+        <tr>
+          <td>10</td>
+          <td><code>E</code></td>
+          <td><code>        </code></td>
+          <td><strong>REDUCE</strong> E &rarr; E*E</td>
+        </tr>
+        <tr>
+          <td>11</td>
+          <td><code>E</code></td>
+          <td><code>        </code></td>
+          <td><strong>ACCEPT</strong> String parsed successfully!</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>6. Interactive Mastery Check</h2>
+  <p>Test your conceptual retention. Choose the exact answer to each diagnostic question:</p>
+
+  <!-- Quiz Question 1 -->
+  <div class="quiz-container" id="q1">
+    <div class="quiz-title">Question 1</div>
+    <div class="quiz-question">Why is <code>while(check());</code> executed instead of a single <code>if(check())</code> statement after each token shift?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q1', 0, false, 'Incorrect. while(check()) does not ignore syntax errors; it repeatedly performs valid handle reductions.')">Ensures all syntax errors get ignored completely</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 1, false, 'Incorrect. Dynamic allocation is not managed by while(check()).')">Allocates extra memory cells for future tokens</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 2, true, 'Correct! A single shift can trigger multiple consecutive reductions (e.g. id -> E followed immediately by E+E -> E). while(check()) loops until the stack stabilizes.')">Resolves cascading reductions triggered by new symbols</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 3, false, 'Incorrect. The stack pointer k is never reset to zero; it decreases only by the reduced handle width.')">Resets stack pointer back to initial zero</div>
+    </div>
+    <div class="quiz-feedback" id="q1-feedback"></div>
+  </div>
+
+  <!-- Quiz Question 2 -->
+  <div class="quiz-container" id="q2">
+    <div class="quiz-title">Question 2</div>
+    <div class="quiz-question">What runtime bug occurs if the boundary guard <code>k >= 3</code> is omitted when checking for <code>E+E</code>?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q2', 0, true, 'Correct! When k < 3, evaluating stack[k-3] dereferences memory before the start of the stack array (negative index), causing undefined behavior or crashes.')">Negative memory indices cause undefined behavior</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 1, false, 'Incorrect. Array bounds are not checked at compile time in standard C; the compiler emits no error.')">Compiler rejects source code during compilation</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 2, false, 'Incorrect. The input scanner advances normally; the error is out-of-bounds stack dereferencing.')">Input string scanner hangs inside loop</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 3, false, 'Incorrect. Terminal column alignment has nothing to do with stack index boundary validation.')">Output table columns fail to align</div>
+    </div>
+    <div class="quiz-feedback" id="q2-feedback"></div>
+  </div>
+
+  <!-- Quiz Question 3 -->
+  <div class="quiz-container" id="q3">
+    <div class="quiz-title">Question 3</div>
+    <div class="quiz-question">How does this specific C implementation resolve the shift-reduce ambiguity in the grammar <code>E &rarr; E+E | E*E</code>?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q3', 0, false, 'Incorrect. This implementation uses direct substring checks in check(), not an external precedence matrix.')">Consults an external operator precedence matrix table dynamically</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 1, false, 'Incorrect. A shift-reduce parser is deterministic and does not backtrack stack states.')">Backtracks stack states whenever grammar conflicts arise unexpectedly</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 2, false, 'Incorrect. Ambiguity resolution is baked directly into the control flow, requiring no runtime user prompts.')">Prompts user to resolve conflict at command terminal</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 3, true, 'Correct! As soon as check() finds a valid handle like E+E on top of the stack, it reduces it immediately without looking ahead at upcoming operators like *.')">Reduces handles greedily before shifting any next terminal</div>
+    </div>
+    <div class="quiz-feedback" id="q3-feedback"></div>
+  </div>
+
+  <h2>7. Recommended Primary Source</h2>
+  <p>To deepen your understanding of bottom-up syntax analysis and handle pruning:</p>
+  <ul>
+    <li><strong>The Dragon Book:</strong> <em>Compilers: Principles, Techniques, and Tools</em> by Aho, Lam, Sethi, &amp; Ullman &mdash; <strong>Chapter 4 (Syntax Analysis), Section 4.5: Bottom-Up Parsing</strong>. Read this section for formal definitions of handles, viable prefixes, and rightmost derivations in reverse.</li>
+    <li><strong>O'Reilly lex &amp; yacc:</strong> by Levine, Mason, &amp; Brown &mdash; <strong>Chapter 3: Using YACC</strong>. Excellent explanation of how YACC detects and handles shift/reduce and reduce/reduce conflicts in LALR(1) tables.</li>
+  </ul>
+
+  <div class="callout">
+    <strong>Need Clarification?</strong> If any stack pointer calculation (like <code>k = k - 2</code>) or handle identification condition feels counterintuitive, ask your teacher agent right now. We will walk through custom input strings together before testing your blank-sheet recall.
+  </div>
+
+  <div class="nav-links">
+    <a href="0004-intermediate-code-generator-from-scratch.html">&larr; Lesson 0004: Intermediate Code</a>
+    <a href="../index.html" class="nav-home">&larr; Home</a>
+    <a href="../reference/shift-reduce-reference.html">&rarr; Open Reference Sheet</a>
+  </div>
+</div>
+
+<script>
+function checkAnswer(questionId, selectedIdx, isCorrect, explanation) {
+  const container = document.getElementById(questionId);
+  const options = container.querySelectorAll('.quiz-option');
+  const feedback = document.getElementById(questionId + '-feedback');
+  
+  options.forEach((opt, idx) => {
+    opt.classList.remove('correct', 'incorrect');
+    if (idx === selectedIdx) {
+      opt.classList.add(isCorrect ? 'correct' : 'incorrect');
+    }
+  });
+  
+  feedback.style.display = 'block';
+  feedback.style.backgroundColor = isCorrect ? 'var(--success-bg)' : 'var(--error-bg)';
+  feedback.style.color = isCorrect ? 'var(--success)' : 'var(--error)';
+  feedback.innerHTML = (isCorrect ? '<strong>✓ Correct!</strong> ' : '<strong>✗ Incorrect.</strong> ') + explanation;
+}
+</script>
+</body>
+</html>

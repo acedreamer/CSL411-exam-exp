@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reference: Intermediate Code Generator (Three-Address Code)</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/theme.js"></script>
+  <style>
+    @media print {
+      body { padding: 0; font-size: 14px; }
+      .nav-links, .theme-toggle-wrapper { display: none; }
+      pre { border: 1px solid #ccc; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="kicker"><a href="../index.html" class="kicker-home">&larr; Home</a> &bull; Reference Document &bull; CSL411</div>
+    <h1>Three-Address Code (TAC) Cheat Sheet</h1>
+    <p class="subtitle">Instruction formats, decomposition recipes, quadruple tables, and relational jump templates.</p>
+  </header>
+
+  <h2>1. What is Three-Address Code?</h2>
+  <div class="diagram-box">
+    <p><strong>Definition:</strong> Three-Address Code (TAC) is an intermediate representation where each instruction has at most one operator on the right-hand side and at most three operand memory addresses (typically two sources and one destination):</p>
+    <pre><code>x = y op z     /* Binary operation: destination x, source operands y and z */
+x = op y       /* Unary operation: destination x, single source operand y  */
+x = y          /* Copy instruction: value of y loaded into x               */
+goto L         /* Unconditional branch to instruction label L             */
+if x relop y goto L  /* Conditional branch based on boolean predicate      */</code></pre>
+    <p>Complex AST expressions like <code>x = a + b * c - d</code> cannot execute atomically on hardware; they must be linearized into a chronological sequence of elementary three-address instructions using compiler-generated temporary variables (<code>temp</code>, <code>temp1</code>, etc.).</p>
+  </div>
+
+  <h2>2. The Three TAC Generation Recipes</h2>
+  <div class="diagram-box">
+    <table>
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Input Pattern</th>
+          <th>Algorithmic Recipe</th>
+          <th>Generated TAC Output</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>1. Assignment Statement</strong></td>
+          <td><code>a = b + c</code><br>or <code>a = b</code></td>
+          <td>
+            1. Search for <code>'='</code> pivot.<br>
+            2. Split string into <code>lhs</code> and <code>rhs</code>.<br>
+            3. If <code>rhs</code> has an operator (<code>+,-,*,/</code>), emit binary TAC.<br>
+            4. Otherwise, emit simple copy TAC.
+          </td>
+          <td>
+            <code>temp = b + c</code><br>
+            <code>a = temp</code><br>
+            <em>(Simple):</em><br>
+            <code>temp = b</code><br>
+            <code>a = temp</code>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>2. Arithmetic Expression</strong></td>
+          <td><code>a * b - c</code><br>or <code>a + b * c</code></td>
+          <td>
+            1. Scan left-to-right for high-precedence operators (<code>*</code>, <code>/</code>).<br>
+            2. If found, evaluate <code>temp = left op right</code> first.<br>
+            3. Fold remaining operand into <code>temp1 = temp op remainder</code>.<br>
+            4. If only <code>+,-</code>, evaluate strictly left-to-right.
+          </td>
+          <td>
+            <em>For <code>a*b-c</code>:</em><br>
+            <code>temp = a * b</code><br>
+            <code>temp1 = temp - c</code><br><br>
+            <em>For <code>a+b*c</code>:</em><br>
+            <code>temp = b * c</code><br>
+            <code>temp1 = a + temp</code>
+          </td>
+        </tr>
+        <tr>
+          <td><strong>3. Relational Expression</strong></td>
+          <td><code>a &lt;= b</code><br>or <code>x &gt; y</code></td>
+          <td>
+            1. Emit conditional jump to true branch (<code>addr + 3</code>).<br>
+            2. Emit fall-through assignment for false (<code>T = 0</code>).<br>
+            3. Emit unconditional skip jump (<code>goto addr + 4</code>).<br>
+            4. Emit true assignment target (<code>T = 1</code>).<br>
+            5. Advance base address: <code>addr += 4</code>.
+          </td>
+          <td>
+            <code>100: if a &lt;= b goto 103</code><br>
+            <code>101: T = 0</code><br>
+            <code>102: goto 104</code><br>
+            <code>103: T = 1</code><br>
+            <code>(Next addr: 104)</code>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>3. IR Data Structures: Quadruples vs. Triples vs. Indirect Triples</h2>
+  <div class="diagram-box">
+    <p>In production compilers, TAC is stored in structured tables rather than raw text. Here is how the three representations store <code>t1 = b * c; a = a + t1</code>:</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Representation</th>
+          <th>Structure Fields</th>
+          <th>Sample Record Entry</th>
+          <th>Key Trade-Off for Viva</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Quadruples</strong></td>
+          <td><code>(op, arg1, arg2, result)</code></td>
+          <td>
+            <code>(0) [*, b, c, t1]</code><br>
+            <code>(1) [+, a, t1, a]</code>
+          </td>
+          <td>
+            Explicit temporary names. Reordering instructions during code optimization is trivial because arguments refer to variable names, not instruction positions. Consumes 4 memory slots per record.
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Triples</strong></td>
+          <td><code>(op, arg1, arg2)</code></td>
+          <td>
+            <code>(0) [*, b, c]</code><br>
+            <code>(1) [+, a, (0)]</code>
+          </td>
+          <td>
+            No explicit temporary names; results are referenced by table indices like <code>(0)</code>. Saves memory, but moving or deleting an instruction forces rewriting all pointer references throughout the entire table.
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Indirect Triples</strong></td>
+          <td>Pointers array to separate <code>(op, arg1, arg2)</code> array</td>
+          <td>
+            <code>Order[0] &rarr; &amp;Trip[0]</code><br>
+            <code>Order[1] &rarr; &amp;Trip[1]</code>
+          </td>
+          <td>
+            Combines the space efficiency of triples with the reordering freedom of quadruples. Optimizers move pointers in the <code>Order[]</code> array without touching the triple memory records.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>4. Complete Reconstructible C Code (Minimal Clean Form)</h2>
+  <pre><code>#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdlib.h&gt;
+
+void assignment_tac(char exp[]);
+void arithmetic_tac(char exp[]);
+void relational_tac(char exp[]);
+
+int addr = 100;
+
+int main() {
+    int ch;
+    char exp[50];
+    
+    while (1) {
+        printf("\n1. Assignment\n2. Arithmetic\n3. Relational\n4. Exit\nChoice: ");
+        if (scanf("%d", &amp;ch) != 1) break;
+        if (ch == 4) break;
+        
+        printf("Enter expression: ");
+        scanf("%s", exp);
+        
+        switch (ch) {
+            case 1: assignment_tac(exp); break;
+            case 2: arithmetic_tac(exp); break;
+            case 3: relational_tac(exp); break;
+            default: printf("Invalid choice!\n");
+        }
+    }
+    return 0;
+}
+
+void assignment_tac(char exp[]) {
+    int i = 0, l = strlen(exp);
+    char lhs[10], rhs[20];
+    
+    while (exp[i] != '=' &amp;&amp; i &lt; l) {
+        lhs[i] = exp[i];
+        i++;
+    }
+    lhs[i] = '\0';
+    
+    if (i &gt;= l) {
+        printf("Error: Missing '='\n");
+        return;
+    }
+    
+    strcpy(rhs, &amp;exp[i + 1]);
+    
+    int op_pos = -1;
+    for (int j = 0; rhs[j] != '\0'; j++) {
+        if (rhs[j] == '+' || rhs[j] == '-' || rhs[j] == '*' || rhs[j] == '/') {
+            op_pos = j;
+            break;
+        }
+    }
+    
+    printf("\nThree Address Code:\n");
+    if (op_pos != -1) {
+        char op1[10], op2[10];
+        strncpy(op1, rhs, op_pos);
+        op1[op_pos] = '\0';
+        strcpy(op2, &amp;rhs[op_pos + 1]);
+        printf("temp = %s %c %s\n", op1, rhs[op_pos], op2);
+        printf("%s = temp\n", lhs);
+    } else {
+        printf("temp = %s\n", rhs);
+        printf("%s = temp\n", lhs);
+    }
+}
+
+void arithmetic_tac(char exp[]) {
+    int l = strlen(exp);
+    int op_idx = -1;
+    
+    for (int i = 0; i &lt; l; i++) {
+        if (exp[i] == '*' || exp[i] == '/') {
+            op_idx = i;
+            break;
+        }
+    }
+    
+    printf("\nThree Address Code:\n");
+    if (op_idx != -1) {
+        /* High precedence operator found */
+        printf("temp = %c %c %c\n", exp[op_idx - 1], exp[op_idx], exp[op_idx + 1]);
+        if (op_idx + 2 &lt; l) {
+            printf("temp1 = temp %c %c\n", exp[op_idx + 2], exp[op_idx + 3]);
+        } else if (op_idx - 2 &gt;= 0) {
+            printf("temp1 = %c %c temp\n", exp[op_idx - 3], exp[op_idx - 2]);
+        }
+    } else {
+        /* Only addition or subtraction */
+        printf("temp = %c %c %c\n", exp[0], exp[1], exp[2]);
+        if (l &gt; 3) {
+            printf("temp1 = temp %c %c\n", exp[3], exp[4]);
+        }
+    }
+}
+
+void relational_tac(char exp[]) {
+    printf("\nThree Address Code:\n");
+    printf("%d: if %s goto %d\n", addr, exp, addr + 3);
+    printf("%d: T = 0\n", addr + 1);
+    printf("%d: goto %d\n", addr + 2, addr + 4);
+    printf("%d: T = 1\n", addr + 3);
+    addr += 4;
+}</code></pre>
+
+  <h2>5. Examiner Viva Traps & Checkpoints</h2>
+  <ul>
+    <li><strong>Why does <code>addr</code> increment by 4?</strong> The relational code template consumes four contiguous instruction addresses: the conditional jump (<code>addr</code>), the false assignment (<code>addr + 1</code>), the unconditional skip jump (<code>addr + 2</code>), and the true assignment (<code>addr + 3</code>). Advancing by 4 (<code>addr += 4</code>) guarantees that subsequent relational blocks or surrounding control statements receive fresh, non-overlapping label addresses starting at <code>addr + 4</code>.</li>
+    <li><strong>What is the TAC constraint?</strong> An instruction may reference at most 3 addresses (up to 2 source operands and 1 destination). This matches standard assembly architectures (e.g., RISC / x86 load-operate-store paradigms), enabling direct instruction selection and register allocation.</li>
+    <li><strong>Why do Quadruples need more memory than Triples?</strong> Quadruples dedicate an explicit fourth field to store the result/temporary variable name (e.g., <code>t1</code>). Triples omit this field and refer to results implicitly via the statement array index (e.g., <code>(0)</code>). However, triples make compiler optimizations (like loop code motion and dead code elimination) harder because moving statements requires rewriting index pointers throughout the program.</li>
+    <li><strong>How does <code>arithmetic_tac</code> implement precedence?</strong> It implements a two-pass priority scan. Pass 1 searches for high-precedence operators (<code>*</code> and <code>/</code>) and isolates their neighboring operands into <code>temp</code>. Pass 2 binds the remaining lower-precedence addition/subtraction operand with <code>temp</code> into <code>temp1</code>.</li>
+  </ul>
+
+  <div class="nav-links">
+    <a href="../index.html" class="nav-home">&larr; Home</a>
+    <a href="../lessons/0004-intermediate-code-generator-from-scratch.html">&larr; Return to Lesson 0004</a>
+    <a href="shift-reduce-reference.html">Next: Shift-Reduce Parser &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

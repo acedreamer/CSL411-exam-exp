@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 0001: Calculator Using LEX & YACC From Scratch</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/theme.js"></script>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="kicker"><a href="../index.html" class="kicker-home">&larr; Home</a> &bull; Lesson 0001 &bull; Compiler Design Lab</div>
+    <h1>Calculator Using LEX and YACC From Scratch</h1>
+    <p class="subtitle">Deconstructing the contract between the Tokenizer and the Grammar Evaluator.</p>
+  </header>
+
+  <div class="callout">
+    <strong>Mission Alignment:</strong> Your goal is to write both <code>calc.l</code> and <code>calc.y</code> from a completely blank screen without looking at notes. By the end of this 10-minute lesson, you will understand the three communication channels connecting LEX and YACC.
+  </div>
+
+  <h2>1. The Mental Model: The Translator & The Calculator</h2>
+  <p>Most students fail to write LEX and YACC programs because they treat them as a single monolithic script. In reality, they are two distinct programs working in tandem:</p>
+  
+  <div class="diagram-box">
+    <ol>
+      <li><strong>LEX is the Tokenizer (The Reader):</strong> Reads raw ASCII characters from the input stream, ignores spaces, converts sequences like <code>"4"</code>, <code>"5"</code> into the integer <code>45</code>, and hands tokens to YACC.</li>
+      <li><strong>YACC is the Grammar Evaluator (The Math Brain):</strong> Doesn't know or care about raw characters. It receives tokens like <code>NUMBER</code>, organizes them into an evaluation tree based on operator precedence, and executes arithmetic actions.</li>
+    </ol>
+  </div>
+
+  <h2>2. The Shared Pipeline: How the Files Connect</h2>
+  <p>To compile the system, four files interact across a precise sequence:</p>
+
+  <pre><code>Step 1: yacc -d calc.y       &rarr; Creates y.tab.c (grammar) and y.tab.h (tokens)
+Step 2: lex calc.l           &rarr; Creates lex.yy.c (tokenizer)
+Step 3: gcc lex.yy.c y.tab.c -w -o calc.out
+Step 4: ./calc.out</code></pre>
+
+  <p><strong>The Golden Contract:</strong> Why do we run <code>yacc -d</code> first? Because <code>calc.l</code> needs to know what token ID <code>NUMBER</code> represents. YACC generates the header file <code>y.tab.h</code>, which <code>calc.l</code> includes.</p>
+
+  <h2>3. File 1: <code>calc.l</code> (The Tokenizer)</h2>
+  <p>LEX files have three sections separated by <code>%%</code>:</p>
+
+  <pre><code>%{
+#include &lt;stdio.h&gt;
+#include "y.tab.h"    /* 1. Imports NUMBER token definition from YACC */
+extern int yylval;    /* 2. Global mailbox to pass values to YACC */
+%}
+
+%%
+[0-9]+      { yylval = atoi(yytext); return NUMBER; } /* Match digits */
+[\n]        { return 0; }                             /* End of expression */
+[ \t]       ;                                         /* Ignore whitespace */
+.           { return yytext[0]; }                     /* Return literal operator */
+%%
+
+int yywrap() {
+    return 1; /* Signals end of input stream */
+}</code></pre>
+
+  <div class="callout">
+    <strong>The 3 rules you need to hold in your head:</strong>
+    <ul>
+      <li>Numbers: <code>[0-9]+ &rarr; yylval = atoi(yytext); return NUMBER;</code></li>
+      <li>Newline: <code>[\n] &rarr; return 0;</code> (tells YACC parsing is finished)</li>
+      <li>Operators: <code>. &rarr; return yytext[0];</code> (returns <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, <code>(</code>, <code>)</code> directly)</li>
+    </ul>
+  </div>
+
+  <h2>4. File 2: <code>calc.y</code> (The Evaluator)</h2>
+  <p>YACC also has three sections, but here you define grammar rules and operator precedence.</p>
+
+  <h3>A. Declarations & Precedence</h3>
+  <pre><code>%{
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int flag = 0;
+int yylex();
+void yyerror(const char *s);
+%}
+
+%token NUMBER
+%left '+' '-'
+%left '*' '/' '%'
+%left '(' ')'</code></pre>
+
+  <p><em>Precedence rule:</em> Operators declared <strong>lower</strong> have <strong>higher precedence</strong>. Because <code>*</code> is written after <code>+</code>, YACC automatically evaluates multiplication before addition!</p>
+
+  <h3>B. Grammar Productions & Semantic Actions</h3>
+  <pre><code>%%
+Calculate : E {
+    printf("The calculated value is: %d\n", $$);
+} ;
+
+E : E '+' E    { $$ = $1 + $3; }
+  | E '-' E    { $$ = $1 - $3; }
+  | E '*' E    { $$ = $1 * $3; }
+  | E '/' E    { 
+        if ($3 == 0) {
+            printf("\nRuntime Error: Division by zero!\n");
+            flag = 1;
+            YYABORT;
+        } else {
+            $$ = $1 / $3;
+        }
+    }
+  | E '%' E    { $$ = $1 % $3; }
+  | '(' E ')'  { $$ = $2; }
+  | NUMBER     { $$ = $1; }
+  ;
+%%</code></pre>
+
+  <p><strong>Deciphering the Dollar Signs:</strong></p>
+  <ul>
+    <li><code>$$</code> = The result of the left-hand side non-terminal (<code>E</code>).</li>
+    <li><code>$1</code> = The value of the first symbol on the right-hand side.</li>
+    <li><code>$2</code> = The operator symbol (e.g., <code>'+'</code>).</li>
+    <li><code>$3</code> = The value of the third symbol on the right-hand side.</li>
+  </ul>
+
+  <h3>C. Driver & Error Routine</h3>
+  <pre><code>int main() {
+    printf("Enter the arithmetic expression:\n");
+    yyparse();
+    if (flag == 0) {
+        printf("Successful evaluation done.\n");
+    }
+    return 0;
+}
+
+void yyerror(const char *s) {
+    flag = 1;
+    printf("Invalid expression to calculate, unable to parse.\n");
+}</code></pre>
+
+  <h2>5. Interactive Mastery Check</h2>
+  <p>Test your conceptual retention. Choose the exact answer to each diagnostic question:</p>
+
+  <!-- Quiz Question 1 -->
+  <div class="quiz-container" id="q1">
+    <div class="quiz-title">Question 1</div>
+    <div class="quiz-question">What is the exact role of the flag <code>-d</code> when executing <code>yacc -d calc.y</code>?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q1', 0, true, 'Correct! yacc -d creates y.tab.h which calc.l imports to recognize the token NUMBER.')">Generates the y.tab.h token header file</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 1, false, 'Incorrect. Debug mode is enabled via -t or -v in YACC/Bison.')">Displays detailed parser debug messages</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 2, false, 'Incorrect. YACC does not delete intermediate build outputs.')">Deletes obsolete compiled output binaries</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 3, false, 'Incorrect. Grammatical warnings are managed by separate options.')">Disables grammar ambiguity warning logs</div>
+    </div>
+    <div class="quiz-feedback" id="q1-feedback"></div>
+  </div>
+
+  <!-- Quiz Question 2 -->
+  <div class="quiz-container" id="q2">
+    <div class="quiz-title">Question 2</div>
+    <div class="quiz-question">In YACC declarations, how is operator precedence determined between <code>%left '+' '-'</code> and <code>%left '*' '/'</code>?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q2', 0, false, 'Incorrect. The quantity of characters in a rule has no impact on precedence.')">Rules written with fewer symbols evaluate first</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 1, true, 'Correct! YACC assigns higher precedence to operators declared later down the file.')">Directives declared lower obtain higher priority</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 2, false, 'Incorrect. Earlier declarations hold lower precedence, not higher.')">Operators declared earlier take precedence always</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 3, false, 'Incorrect. The %left declaration order establishes precedence implicitly.')">Arithmetic order requires explicit precedence tags</div>
+    </div>
+    <div class="quiz-feedback" id="q2-feedback"></div>
+  </div>
+
+  <!-- Quiz Question 3 -->
+  <div class="quiz-container" id="q3">
+    <div class="quiz-title">Question 3</div>
+    <div class="quiz-question">How does LEX communicate the integer numerical value of matched text <code>yytext</code> to YACC?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q3', 0, false, 'Incorrect. yyparse takes no parameters in standard YACC setups.')">Passing arguments inside the parser driver call</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 1, false, 'Incorrect. Communication occurs in memory, not using filesystem storage.')">Writing values into temporary global text files</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 2, true, 'Correct! LEX assigns atoi(yytext) into external variable yylval, which YACC retrieves as $1.')">Assigning parsed integer value into yylval directly</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 3, false, 'Incorrect. The return statement of yylex transmits token type, not numeric value.')">Returning numerical values from the main scanner</div>
+    </div>
+    <div class="quiz-feedback" id="q3-feedback"></div>
+  </div>
+
+  <h2>6. Recommended Primary Source</h2>
+  <p>To deepen your understanding of how LALR(1) shift-reduce parsing works under the hood of YACC, read <strong>Chapter 4 (Syntax Analysis)</strong> of <em>Compilers: Principles, Techniques, and Tools</em> by Aho, Lam, Sethi, and Ullman (The Dragon Book), or <strong>Chapters 1 & 3</strong> of <em>lex & yacc</em> by Levine, Mason, and Brown (O'Reilly).</p>
+
+  <div class="callout">
+    <strong>Need Help?</strong> If any transition or pseudo-variable (like <code>$$</code> or <code>yylval</code>) feels ambiguous, ask your teacher agent right now. We will clarify it before testing your blank-sheet recall.
+  </div>
+
+  <div class="nav-links">
+    <a href="../index.html" class="nav-home">&larr; Home</a>
+    <a href="../reference/calc-lex-yacc-reference.html">&rarr; Open Reference Sheet</a>
+    <a href="0002-constant-propagation-from-scratch.html">Lesson 0002: Constant Propagation &rarr;</a>
+  </div>
+</div>
+
+<script>
+function checkAnswer(questionId, selectedIdx, isCorrect, explanation) {
+  const container = document.getElementById(questionId);
+  const options = container.querySelectorAll('.quiz-option');
+  const feedback = document.getElementById(questionId + '-feedback');
+  
+  options.forEach((opt, idx) => {
+    opt.classList.remove('correct', 'incorrect');
+    if (idx === selectedIdx) {
+      opt.classList.add(isCorrect ? 'correct' : 'incorrect');
+    }
+  });
+  
+  feedback.style.display = 'block';
+  feedback.style.backgroundColor = isCorrect ? 'var(--success-bg)' : 'var(--error-bg)';
+  feedback.style.color = isCorrect ? 'var(--success)' : 'var(--error)';
+  feedback.innerHTML = (isCorrect ? '<strong>✓ Correct!</strong> ' : '<strong>✗ Incorrect.</strong> ') + explanation;
+}
+</script>
+</body>
+</html>

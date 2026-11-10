@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 0004: Intermediate Code Generator (Three-Address Code) From Scratch</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/theme.js"></script>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="kicker"><a href="../index.html" class="kicker-home">&larr; Home</a> &bull; Lesson 0004 &bull; Compiler Design Lab</div>
+    <h1>Intermediate Code Generator (TAC) From Scratch</h1>
+    <p class="subtitle">Linearizing syntax trees into atomic three-address operations with operator precedence and relational jump cascades.</p>
+  </header>
+
+  <div class="callout">
+    <strong>Mission Alignment:</strong> Your objective is to write the complete C program for Three-Address Code generation from memory on a blank sheet or IDE without looking at notes. By the end of this lesson, you will master the three modular generation recipes: assignment partitioning, precedence scanning, and the 4-slot relational jump template.
+  </div>
+
+  <h2>1. The Mental Model: The Assembly-Line Translator</h2>
+  <p>Imagine a factory assembly line producing custom furniture. If an order arrives saying: <em>"Build a varnished oak dining table with four tapered legs and brass caps,"</em> no single machine can fulfill this sentence in one step. The factory floor manager must decompose the instruction into elementary, two-input operations:</p>
+
+  <div class="diagram-box">
+    <ol>
+      <li><code>t1 = cut_wood(oak, tabletop)</code></li>
+      <li><code>t2 = carve_legs(oak, 4)</code></li>
+      <li><code>t3 = attach(t1, t2)</code></li>
+      <li><code>t4 = fit_caps(t3, brass)</code></li>
+      <li><code>final_table = varnish(t4)</code></li>
+    </ol>
+    <p style="margin-top: 14px; margin-bottom: 0;"><strong>The Compiler's Dilemma:</strong> A CPU is just like that factory machine. A processor cannot execute a nested high-level expression like <code>x = a + b * c - d</code> in one stroke. It only knows how to load two registers, apply one arithmetic logic unit (ALU) operation, and store the result. <strong>Three-Address Code (TAC)</strong> is the linearized, intermediate language that bridges human syntax trees and physical machine registers.</p>
+  </div>
+
+  <h2>2. What Makes Code "Three-Address"?</h2>
+  <p>In standard Three-Address Code, every statement has <strong>at most one operator</strong> on the right-hand side and references <strong>at most three memory addresses</strong> (two sources and one destination):</p>
+  
+  <pre><code>x = y op z      /* General binary form: 3 addresses (x, y, z) */
+x = op y        /* Unary form: 2 addresses (x, y)             */
+x = y           /* Copy form: 2 addresses (x, y)              */
+goto L          /* Unconditional jump: 1 address (target L)   */
+if x relop y goto L  /* Conditional branch: 3 addresses (x, y, L) */</code></pre>
+
+  <p>To evaluate complex statements, the compiler generates synthetic names called <strong>temporaries</strong> (<code>temp</code>, <code>temp1</code>, <code>t1</code>, etc.) to store intermediate sub-computations.</p>
+
+  <h2>3. Deconstructing the Three Generation Recipes</h2>
+  <p>In the KTU CSL411 lab implementation, the program handles three distinct categories of expressions via modular functions:</p>
+
+  <h3>Recipe 1: Assignment Statements (<code>assignment_tac</code>)</h3>
+  <p>Given an expression like <code>a = b + c</code> or a direct copy like <code>a = b</code>:</p>
+  <div class="diagram-box">
+    <ol>
+      <li><strong>Locate the Pivot:</strong> Scan the input string until encountering the <code>'='</code> character. Everything to the left is the Left-Hand Side (<code>lhs</code>), and everything to the right is the Right-Hand Side (<code>rhs</code>).</li>
+      <li><strong>Operator Inspection:</strong> Traverse <code>rhs</code> to check for arithmetic operators (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>).</li>
+      <li><strong>Emission Logic:</strong>
+        <ul>
+          <li><em>Compound RHS (e.g., <code>b + c</code>):</em> Extract operand 1 (<code>b</code>), operator (<code>+</code>), and operand 2 (<code>c</code>). Emit:
+            <pre><code>temp = b + c
+a = temp</code></pre>
+          </li>
+          <li><em>Simple RHS (e.g., <code>b</code>):</em> Emit:
+            <pre><code>temp = b
+a = temp</code></pre>
+          </li>
+        </ul>
+      </li>
+    </ol>
+  </div>
+
+  <h3>Recipe 2: Arithmetic Expressions & Precedence (<code>arithmetic_tac</code>)</h3>
+  <p>Consider the expression <code>a + b * c</code> versus <code>a * b - c</code>. A naive left-to-right evaluation would evaluate <code>(a + b)</code> first, violating mathematical precedence! To solve this without a full parsing tree, our generator uses a <strong>two-pass priority scan</strong>:</p>
+
+  <div class="diagram-box">
+    <p><strong>Pass 1 (High Precedence):</strong> Search for multiplication (<code>*</code>) or division (<code>/</code>).</p>
+    <ul>
+      <li>If found at index <code>op_idx</code>, isolate the immediately adjacent characters: left operand <code>exp[op_idx - 1]</code> and right operand <code>exp[op_idx + 1]</code>.</li>
+      <li>Emit the high-priority calculation:
+        <pre><code>temp = exp[op_idx - 1] exp[op_idx] exp[op_idx + 1]</code></pre>
+      </li>
+      <li>Fold the remaining lower-precedence operation with <code>temp</code>:
+        <ul>
+          <li>If the remainder is to the right (e.g., <code>a * b - c</code>): emit <code>temp1 = temp - c</code>.</li>
+          <li>If the remainder is to the left (e.g., <code>a + b * c</code>): emit <code>temp1 = a + temp</code>.</li>
+        </ul>
+      </li>
+    </ul>
+    <p><strong>Pass 2 (Low Precedence Fallback):</strong> If no <code>*</code> or <code>/</code> is present (e.g., <code>a + b - c</code>), evaluate strictly left-to-right:</p>
+    <pre><code>temp = a + b
+temp1 = temp - c</code></pre>
+  </div>
+
+  <h3>Recipe 3: Relational Expressions & The 4-Slot Jump Template (<code>relational_tac</code>)</h3>
+  <p>Hardware ALUs do not directly produce boolean symbols like "true" or "false" from comparisons; they evaluate comparison conditions by testing zero flags and branching. The relational generator mirrors this through a classic <strong>four-quadruple boolean branching template</strong>:</p>
+
+  <div class="diagram-box">
+    <p>Given the relational expression <code>a &lt;= b</code> with starting address counter <code>addr = 100</code>:</p>
+    <pre><code>100: if a &lt;= b goto 103   /* Slot 1: If condition holds, jump straight to True */
+101: T = 0                 /* Slot 2: Fall-through: condition failed, assign False */
+102: goto 104              /* Slot 3: Unconditional jump to skip True assignment */
+103: T = 1                 /* Slot 4: Target for True condition, assign True    */
+(Next statement begins at 104)</code></pre>
+  </div>
+
+  <div class="callout">
+    <strong>Why increment <code>addr += 4</code>?</strong><br>
+    Notice that the template occupies exactly 4 address slots: <code>addr</code>, <code>addr+1</code>, <code>addr+2</code>, and <code>addr+3</code>. By incrementing <code>addr</code> by 4, the program ensures that subsequent instructions or future expressions start at <code>addr+4</code>, eliminating label collision!
+  </div>
+
+  <h2>4. Complete Reconstructible C Code</h2>
+  <p>Study this minimal, clean implementation. Notice how the three functions cleanly isolate the generation logic:</p>
+
+  <pre><code>#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdlib.h&gt;
+
+void assignment_tac(char exp[]);
+void arithmetic_tac(char exp[]);
+void relational_tac(char exp[]);
+
+int addr = 100;
+
+int main() {
+    int ch;
+    char exp[50];
+    
+    while (1) {
+        printf("\n==========================================");
+        printf("\n       THREE ADDRESS CODE GENERATOR       ");
+        printf("\n==========================================");
+        printf("\n1. Assignment Statement");
+        printf("\n2. Arithmetic Expression");
+        printf("\n3. Relational Expression");
+        printf("\n4. Exit");
+        printf("\nEnter choice (1-4): ");
+        if (scanf("%d", &amp;ch) != 1 || ch == 4) break;
+        
+        printf("Enter expression: ");
+        scanf("%s", exp);
+        
+        switch (ch) {
+            case 1: assignment_tac(exp); break;
+            case 2: arithmetic_tac(exp); break;
+            case 3: relational_tac(exp); break;
+            default: printf("Invalid option!\n");
+        }
+    }
+    return 0;
+}
+
+void assignment_tac(char exp[]) {
+    int i = 0, l = strlen(exp);
+    char lhs[10], rhs[20];
+    
+    while (exp[i] != '=' &amp;&amp; i &lt; l) {
+        lhs[i] = exp[i];
+        i++;
+    }
+    lhs[i] = '\0';
+    
+    if (i &gt;= l) {
+        printf("Syntax Error: Missing '=' operator.\n");
+        return;
+    }
+    
+    strcpy(rhs, &amp;exp[i + 1]);
+    
+    int op_pos = -1;
+    for (int j = 0; rhs[j] != '\0'; j++) {
+        if (rhs[j] == '+' || rhs[j] == '-' || rhs[j] == '*' || rhs[j] == '/') {
+            op_pos = j;
+            break;
+        }
+    }
+    
+    printf("\nThree Address Code Generated:\n");
+    if (op_pos != -1) {
+        char op1[10], op2[10];
+        strncpy(op1, rhs, op_pos);
+        op1[op_pos] = '\0';
+        strcpy(op2, &amp;rhs[op_pos + 1]);
+        printf("temp = %s %c %s\n", op1, rhs[op_pos], op2);
+        printf("%s = temp\n", lhs);
+    } else {
+        printf("temp = %s\n", rhs);
+        printf("%s = temp\n", lhs);
+    }
+}
+
+void arithmetic_tac(char exp[]) {
+    int l = strlen(exp);
+    int op_idx = -1;
+    
+    for (int i = 0; i &lt; l; i++) {
+        if (exp[i] == '*' || exp[i] == '/') {
+            op_idx = i;
+            break;
+        }
+    }
+    
+    printf("\nThree Address Code Generated:\n");
+    if (op_idx != -1) {
+        /* High precedence operator found */
+        printf("temp = %c %c %c\n", exp[op_idx - 1], exp[op_idx], exp[op_idx + 1]);
+        if (op_idx + 2 &lt; l) {
+            printf("temp1 = temp %c %c\n", exp[op_idx + 2], exp[op_idx + 3]);
+        } else if (op_idx - 2 &gt;= 0) {
+            printf("temp1 = %c %c temp\n", exp[op_idx - 3], exp[op_idx - 2]);
+        }
+    } else {
+        /* Low precedence (+ and -) evaluated left-to-right */
+        printf("temp = %c %c %c\n", exp[0], exp[1], exp[2]);
+        if (l &gt; 3) {
+            printf("temp1 = temp %c %c\n", exp[3], exp[4]);
+        }
+    }
+}
+
+void relational_tac(char exp[]) {
+    printf("\nThree Address Code Generated:\n");
+    printf("%d: if %s goto %d\n", addr, exp, addr + 3);
+    printf("%d: T = 0\n", addr + 1);
+    printf("%d: goto %d\n", addr + 2, addr + 4);
+    printf("%d: T = 1\n", addr + 3);
+    addr += 4;
+}</code></pre>
+
+  <h2>5. Interactive Mastery Check</h2>
+  <p>Test your conceptual retention. Choose the exact answer to each diagnostic question:</p>
+
+  <!-- Quiz Question 1 -->
+  <div class="quiz-container" id="q1">
+    <div class="quiz-title">Question 1</div>
+    <div class="quiz-question">Why does the relational TAC generator increment the instruction address counter by 4?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q1', 0, false, 'Incorrect. Machine architecture byte size is unrelated to statement label counts.')">The architecture requires four bytes per machine instruction</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 1, false, 'Incorrect. Register storage does not constrain the number of label addresses.')">Hardware registers store up to four program addresses</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 2, true, 'Correct! The template generates one branch, two assignments, and one jump, consuming four address slots.')">The generated boolean branching template consumes four slots</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 3, false, 'Incorrect. Data memory alignment is independent of intermediate jump labeling.')">Standard syntax rules require quad word data alignment</div>
+    </div>
+    <div class="quiz-feedback" id="q1-feedback"></div>
+  </div>
+
+  <!-- Quiz Question 2 -->
+  <div class="quiz-container" id="q2">
+    <div class="quiz-title">Question 2</div>
+    <div class="quiz-question">What is the key architectural difference between Quadruples and Triples in TAC representation?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q2', 0, true, 'Correct! Quadruples have an explicit result field, while Triples use implicit positional pointers.')">Quadruples name temporary variables using explicit fields</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 1, false, 'Incorrect. Both structures generate equivalent runtime code efficiency.')">Triples evaluate expressions faster during program execution</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 2, false, 'Incorrect. Quadruples support any valid data type and operator.')">Quadruples only support basic integer arithmetic operations</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 3, false, 'Incorrect. Conditional branches exist in both Quadruple and Triple forms.')">Triples eliminate every conditional jump instruction completely</div>
+    </div>
+    <div class="quiz-feedback" id="q2-feedback"></div>
+  </div>
+
+  <!-- Quiz Question 3 -->
+  <div class="quiz-container" id="q3">
+    <div class="quiz-title">Question 3</div>
+    <div class="quiz-question">Why does the arithmetic TAC generator scan for multiplication and division before addition and subtraction?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q3', 0, false, 'Incorrect. Arithmetic magnitude has no bearing on compilation order.')">Division operations produce larger numerical outputs</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 1, false, 'Incorrect. Register allocation does not alternate by operator positions.')">Memory registers prioritize even operator positions</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 2, false, 'Incorrect. Parsing tables accept both operators according to precedence rules.')">Parsing tables reject lower precedence operators</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 3, true, 'Correct! High-precedence operators bind tighter and must be evaluated into temporaries first.')">Multiplicative operators have higher binding precedence</div>
+    </div>
+    <div class="quiz-feedback" id="q3-feedback"></div>
+  </div>
+
+  <h2>6. Recommended Primary Sources</h2>
+  <p>To master intermediate representation design and code generation theory, study <strong>Chapter 6 (Intermediate-Code Generation)</strong> of <em>Compilers: Principles, Techniques, and Tools</em> by Aho, Lam, Sethi, and Ullman (The Dragon Book). Focus specifically on:</p>
+  <ul>
+    <li><strong>Section 6.2:</strong> Three-Address Code representations (Quadruples, Triples, and Indirect Triples).</li>
+    <li><strong>Section 6.4:</strong> Translation of Expressions and type checking.</li>
+    <li><strong>Section 6.6:</strong> Control Flow and Boolean expression translation via jumping code.</li>
+  </ul>
+
+  <div class="callout">
+    <strong>Need Help?</strong> You can toggle dark or light mode using the button in the top right. If you have any questions about how the relational template or the precedence scan works, ask your teacher agent right now!
+  </div>
+
+  <div class="nav-links">
+    <a href="0003-first-set-of-grammar-from-scratch.html">&larr; Lesson 0003: FIRST Set</a>
+    <a href="../index.html" class="nav-home">&larr; Home</a>
+    <a href="../reference/intermediate-code-reference.html">Reference Sheet</a>
+    <a href="0005-shift-reduce-parser-from-scratch.html">Lesson 0005: Shift-Reduce Parser &rarr;</a>
+  </div>
+</div>
+
+<script>
+function checkAnswer(questionId, selectedIdx, isCorrect, explanation) {
+  const container = document.getElementById(questionId);
+  const options = container.querySelectorAll('.quiz-option');
+  const feedback = document.getElementById(questionId + '-feedback');
+  
+  options.forEach((opt, idx) => {
+    opt.classList.remove('correct', 'incorrect');
+    if (idx === selectedIdx) {
+      opt.classList.add(isCorrect ? 'correct' : 'incorrect');
+    }
+  });
+  
+  feedback.style.display = 'block';
+  feedback.style.backgroundColor = isCorrect ? 'var(--success-bg)' : 'var(--error-bg)';
+  feedback.style.color = isCorrect ? 'var(--success)' : 'var(--error)';
+  feedback.innerHTML = (isCorrect ? '<strong>✓ Correct!</strong> ' : '<strong>✗ Incorrect.</strong> ') + explanation;
+}
+</script>
+</body>
+</html>

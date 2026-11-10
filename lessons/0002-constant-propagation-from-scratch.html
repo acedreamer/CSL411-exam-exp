@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 0002: Constant Propagation & Folding From Scratch</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/theme.js"></script>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="kicker"><a href="../index.html" class="kicker-home">&larr; Home</a> &bull; Lesson 0002 &bull; Compiler Design Lab</div>
+    <h1>Constant Propagation & Folding From Scratch</h1>
+    <p class="subtitle">The quadruple data model, the evaluation guard, and the forward substitution domino effect.</p>
+  </header>
+
+  <div class="callout">
+    <strong>Mission Alignment:</strong> Your objective is to write the complete C program for constant propagation on paper or terminal without referencing external material. By the end of this lesson, you will master the 4 invariant logical steps that govern the optimization.
+  </div>
+
+  <h2>1. The Mental Model: The Spreadsheet Conveyor Belt</h2>
+  <p>Rather than thinking of this program as complex compiler theory, picture a four-column spreadsheet where each row is an instruction:</p>
+  
+  <div class="diagram-box">
+    <code>[ op ] &nbsp; [ op1 ] &nbsp; [ op2 ] &nbsp; [ res ] &nbsp; [ flag ]</code>
+    <p style="margin-top: 12px; margin-bottom: 0;">Two distinct optimizations occur in one pass:</p>
+    <ul>
+      <li><strong>Constant Folding:</strong> If both inputs on a row are already numbers (e.g., <code>3 + 5</code>), we compute <code>8</code> immediately at compile-time and mark the row as eliminated (<code>flag = 1</code>).</li>
+      <li><strong>Constant Propagation:</strong> We take that result (<code>8</code>) and walk forward to all future rows, replacing any mention of the target variable with <code>"8"</code>.</li>
+    </ul>
+  </div>
+
+  <h2>2. The Data Structure: Why Strings?</h2>
+  <p>The core data model is a simple structure array:</p>
+  <pre><code>struct expression {
+    char op[2];   /* Operator string: "+", "-", "*", "/", "=" */
+    char op1[5];  /* First operand: can be variable "a" or number "3" */
+    char op2[5];  /* Second operand: variable "b", number "5", or dummy "?" */
+    char res[5];  /* Result identifier: "c" */
+    int flag;     /* 0 = Active (to print), 1 = Dead / Folded (suppress) */
+} arr[10];</code></pre>
+
+  <div class="callout">
+    <strong>Key Architectural Detail:</strong> Why are <code>op1</code> and <code>op2</code> strings instead of integers? Because when the program starts, they might hold variable names like <code>"a"</code>. Once optimized, they get replaced with string digits like <code>"3"</code>. Character arrays hold both seamlessly.
+  </div>
+
+  <h2>3. The Evaluation Guard: When Can We Fold?</h2>
+  <p>Inside <code>constant()</code>, the program scans each row <code>i</code> from <code>0</code> to <code>n - 1</code>. A row is eligible for evaluation if and only if one of two conditions holds:</p>
+
+  <pre><code>if ((isdigit(arr[i].op1[0]) && isdigit(arr[i].op2[0])) ||
+    (strcmp(arr[i].op, "=") == 0 && isdigit(arr[i].op1[0]))) {
+    /* Safe to calculate! */
+}</code></pre>
+
+  <ol>
+    <li><strong>Binary Arithmetic:</strong> Both operands begin with a digit character (e.g., <code>+ 3 5 b</code>).</li>
+    <li><strong>Direct Assignment:</strong> The operator is <code>"="</code> and the first operand is a digit (e.g., <code>= 3 ? a</code>).</li>
+  </ol>
+
+  <h2>4. The Forward Domino Effect: <code>change()</code></h2>
+  <p>Once a row is calculated, two things happen:</p>
+  <ol>
+    <li>We set <code>arr[i].flag = 1</code>. This marks the assignment as dead code so <code>output()</code> skips it.</li>
+    <li>We call <code>change(i, ans)</code> to propagate the value downstream:</li>
+  </ol>
+
+  <pre><code>void change(int i, int res) {
+    char buf[5];
+    sprintf(buf, "%d", res); /* Convert integer result back to string */
+
+    /* Notice: Loop strictly starts at i + 1! */
+    for (int j = i + 1; j < n; j++) {
+        if (strcmp(arr[i].res, arr[j].op1) == 0) strcpy(arr[j].op1, buf);
+        if (strcmp(arr[i].res, arr[j].op2) == 0) strcpy(arr[j].op2, buf);
+    }
+}</code></pre>
+
+  <p><strong>Why <code>j = i + 1</code>?</strong> In straight-line code, instructions only affect statements placed <em>after</em> them, never before.</p>
+
+  <h2>5. Interactive Mastery Check</h2>
+  <p>Test your understanding of the data structures and control flow:</p>
+
+  <!-- Quiz Question 1 -->
+  <div class="quiz-container" id="q1">
+    <div class="quiz-title">Question 1</div>
+    <div class="quiz-question">Why does <code>change(i, res)</code> begin searching for substitutions strictly at index <code>i + 1</code>?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q1', 0, false, 'Incorrect. Cyclic dependencies occur in graph analysis, not straight-line passes.')">Backward replacement creates cyclic evaluation dependencies</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 1, true, 'Correct! Assignments in a basic block can only affect instructions that execute downstream.')">Variables only affect strictly succeeding instructions</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 2, false, 'Incorrect. Array iteration direction is a choice dictated by program semantics.')">Standard array indices require forward iteration</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 3, false, 'Incorrect. The algorithm logic, not a general mandate, dictates this start bound.')">Optimization algorithms mandate ascending loop counters</div>
+    </div>
+    <div class="quiz-feedback" id="q1-feedback"></div>
+  </div>
+
+  <!-- Quiz Question 2 -->
+  <div class="quiz-container" id="q2">
+    <div class="quiz-title">Question 2</div>
+    <div class="quiz-question">Why are the operand fields declared as character arrays <code>char op1[5]</code> instead of integers?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q2', 0, true, 'Correct! Operands initially hold identifier names like a, and later receive constant strings.')">Strings store both variables and digits</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 1, false, 'Incorrect. Integer arrays do not cause memory overflow in small structures.')">Integers cause memory overflow on arrays</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 2, false, 'Incorrect. Character arrays consume similar or more bytes than a primitive integer.')">Characters consume fewer bytes in storage</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 3, false, 'Incorrect. C allows primitive integer members in any standard structure.')">Compilers restrict integers in struct definitions</div>
+    </div>
+    <div class="quiz-feedback" id="q2-feedback"></div>
+  </div>
+
+  <!-- Quiz Question 3 -->
+  <div class="quiz-container" id="q3">
+    <div class="quiz-title">Question 3</div>
+    <div class="quiz-question">What is the exact operational effect when <code>arr[i].flag</code> is toggled to <code>1</code>?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q3', 0, false, 'Incorrect. The flag indicates optimization status, not syntax analysis faults.')">The parser marks syntax errors immediately</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 1, false, 'Incorrect. Folded statements are dead code and are discarded from execution.')">The statement executes inside standard runtime</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 2, true, 'Correct! Setting flag to 1 tells the output routine to eliminate this dead quadruple.')">The printing function suppresses final display</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 3, false, 'Incorrect. Setting the flag eliminates the statement rather than restoring old states.')">The optimizer restores original variable assignments</div>
+    </div>
+    <div class="quiz-feedback" id="q3-feedback"></div>
+  </div>
+
+  <h2>6. Recommended Primary Source</h2>
+  <p>For a rigorous treatment of data-flow analysis, reaching definitions, and constant folding algorithms, consult <strong>Chapter 12 (Data-Flow Optimization)</strong> in Steven Muchnick's <em>Advanced Compiler Design and Implementation</em>, or <strong>Chapter 9 (Machine-Independent Optimizations)</strong> in the Dragon Book (Aho, Lam, Sethi, & Ullman).</p>
+
+  <div class="callout">
+    <strong>Need Help?</strong> You can toggle the theme using the button in the top right. If you have any questions about how <code>change()</code> cascades into downstream rows, ask your teacher agent now!
+  </div>
+
+  <div class="nav-links">
+    <a href="0001-calculator-lex-yacc-from-scratch.html">&larr; Lesson 0001: Calculator</a>
+    <a href="../index.html" class="nav-home">&larr; Home</a>
+    <a href="../reference/constant-propagation-reference.html">Reference Sheet</a>
+    <a href="0003-first-set-of-grammar-from-scratch.html">Lesson 0003: FIRST Set &rarr;</a>
+  </div>
+</div>
+
+<script>
+function checkAnswer(questionId, selectedIdx, isCorrect, explanation) {
+  const container = document.getElementById(questionId);
+  const options = container.querySelectorAll('.quiz-option');
+  const feedback = document.getElementById(questionId + '-feedback');
+  
+  options.forEach((opt, idx) => {
+    opt.classList.remove('correct', 'incorrect');
+    if (idx === selectedIdx) {
+      opt.classList.add(isCorrect ? 'correct' : 'incorrect');
+    }
+  });
+  
+  feedback.style.display = 'block';
+  feedback.style.backgroundColor = isCorrect ? 'var(--success-bg)' : 'var(--error-bg)';
+  feedback.style.color = isCorrect ? 'var(--success)' : 'var(--error)';
+  feedback.innerHTML = (isCorrect ? '<strong>✓ Correct!</strong> ' : '<strong>✗ Incorrect.</strong> ') + explanation;
+}
+</script>
+</body>
+</html>
