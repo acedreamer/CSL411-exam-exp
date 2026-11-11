@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reference: Lexical Analyzer in C Architecture & Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/theme.js"></script>
+  <style>
+    @media print {
+      body { padding: 0; font-size: 14px; }
+      .nav-links, .theme-toggle-wrapper { display: none; }
+      pre { border: 1px solid #ccc; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="kicker"><a href="../index.html" class="kicker-home">&larr; Home</a> &bull; Reference Document &bull; CSL411</div>
+    <h1>Lexical Analyzer in C Cheat Sheet</h1>
+    <p class="subtitle">Token taxonomy, classification hierarchy, stream flush invariants, and examiner viva traps.</p>
+  </header>
+
+  <h2>1. The 5 Token Categories Taxonomy</h2>
+  <div class="diagram-box">
+    <p>A lexical analyzer converts a continuous stream of characters into a sequence of discrete, categorized tokens:</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Token Category</th>
+          <th>Formal Definition &amp; Pattern</th>
+          <th>Example Lexemes</th>
+          <th>Validation Invariant</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Keyword</strong></td>
+          <td>Reserved words defined by the language grammar</td>
+          <td><code>int</code>, <code>float</code>, <code>if</code>, <code>while</code>, <code>return</code></td>
+          <td>Exact string match against predefined reserved keyword dictionary via <code>is_keyword()</code></td>
+        </tr>
+        <tr>
+          <td><strong>Operator</strong></td>
+          <td>Arithmetic, relational, logical, and assignment symbols</td>
+          <td><code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, <code>=</code>, <code>==</code>, <code>&lt;</code>, <code>&gt;</code></td>
+          <td>Exact string match against operator symbol table via <code>is_operator()</code></td>
+        </tr>
+        <tr>
+          <td><strong>Special Symbol</strong></td>
+          <td>Punctuation, statement terminators, and block delimiters</td>
+          <td><code>;</code>, <code>,</code>, <code>(</code>, <code>)</code>, <code>{</code>, <code>}</code>, <code>[</code>, <code>]</code></td>
+          <td>Match against delimiter character list via <code>is_special()</code></td>
+        </tr>
+        <tr>
+          <td><strong>Constant</strong></td>
+          <td>Unsigned integer or floating numeric literals (<code>[0-9]+</code>)</td>
+          <td><code>10</code>, <code>42</code>, <code>0</code>, <code>365</code></td>
+          <td>Every character must strictly satisfy <code>isdigit()</code> via <code>is_constant()</code></td>
+        </tr>
+        <tr>
+          <td><strong>Identifier</strong></td>
+          <td>User-defined identifiers (<code>[a-zA-Z_][a-zA-Z0-9_]*</code>)</td>
+          <td><code>a</code>, <code>b</code>, <code>sum</code>, <code>total_count</code></td>
+          <td>Initial character must be letter or <code>_</code>; subsequent characters must be alphanumeric or <code>_</code> via <code>is_identifier()</code></td>
+        </tr>
+        <tr>
+          <td><em>Invalid Token</em></td>
+          <td>Malformed characters or mixed illegal symbols</td>
+          <td><code>123abc</code>, <code>@#$</code></td>
+          <td>Fallback category when all five classification predicates return false</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>2. Classification Priority Hierarchy Table</h2>
+  <p>Because the regular expression for identifiers (<code>[a-zA-Z_][a-zA-Z0-9_]*</code>) is a strict <strong>superset</strong> of all language keywords (e.g., <code>int</code>, <code>return</code>, <code>if</code>), classification order is critical. Testing identifiers before keywords causes catastrophic misclassification:</p>
+
+  <div class="diagram-box">
+    <table>
+      <thead>
+        <tr>
+          <th>Priority Rank</th>
+          <th>Classification Subroutine</th>
+          <th>Condition Evaluated</th>
+          <th>Why This Rank Is Enforced</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Priority 1</strong></td>
+          <td><code>is_keyword(buffer)</code></td>
+          <td>Exact match in keyword dictionary</td>
+          <td><strong>Must intercept before Identifier check!</strong> Otherwise, keywords like <code>int</code> will be falsely claimed as variable names.</td>
+        </tr>
+        <tr>
+          <td><strong>Priority 2</strong></td>
+          <td><code>is_operator(buffer)</code></td>
+          <td>Match in operator table (<code>+</code>, <code>-</code>, <code>=</code>, etc.)</td>
+          <td>Direct categorization of packaged mathematical/relational operators.</td>
+        </tr>
+        <tr>
+          <td><strong>Priority 3</strong></td>
+          <td><code>is_special(buffer)</code></td>
+          <td>Match in delimiter list (<code>;</code>, <code>,</code>, <code>(</code>, <code>)</code>, etc.)</td>
+          <td>Direct categorization of punctuation and structural delimiters.</td>
+        </tr>
+        <tr>
+          <td><strong>Priority 4</strong></td>
+          <td><code>is_constant(buffer)</code></td>
+          <td>All characters satisfy <code>isdigit()</code></td>
+          <td>Separates pure numeric literals before identifier analysis begins.</td>
+        </tr>
+        <tr>
+          <td><strong>Priority 5</strong></td>
+          <td><code>is_identifier(buffer)</code></td>
+          <td>Valid ANSI C identifier syntax rules</td>
+          <td>Catches all remaining valid user-defined names having passed keyword filtering.</td>
+        </tr>
+        <tr>
+          <td><strong>Fallback</strong></td>
+          <td><em>Else Branch</em></td>
+          <td>Default catch-all</td>
+          <td>Reports syntax errors / invalid tokens (e.g., digits followed by letters like <code>9xyz</code>).</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>3. Character Stream Scanning &amp; Buffer Flush Invariants</h2>
+  <p>In standard C source code, whitespaces around operators are optional (e.g., <code>a=b+10;</code>). A naive scanner that splits only on whitespace will fail completely. The C scanner enforces three structural invariants:</p>
+
+  <div class="diagram-box">
+    <ol>
+      <li>
+        <strong>Whitespace Delimiter Invariant:</strong>
+        When <code>ch</code> is space (<code>' '</code>), horizontal tab (<code>'\t'</code>), or newline (<code>'\n'</code>):
+        <ul>
+          <li>If <code>idx &gt; 0</code>: null-terminate <code>buffer[idx] = '\0'</code>, dispatch <code>detect(buffer)</code>, and reset <code>idx = 0</code>.</li>
+          <li>If <code>idx == 0</code>: do nothing (skip multiple consecutive whitespaces).</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Self-Delimiting Operator / Symbol Flush Invariant:</strong>
+        When <code>ch</code> is an operator or punctuation (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, <code>=</code>, <code>;</code>, <code>,</code>, etc.):
+        <ul>
+          <li><strong>Step A (Preceding Flush):</strong> If <code>idx &gt; 0</code>, null-terminate and flush the preceding lexeme (e.g., flushing <code>"a"</code> when seeing <code>'='</code>), then reset <code>idx = 0</code>.</li>
+          <li><strong>Step B (Packaging):</strong> Package the current character into a temporary 2-byte null-terminated string <code>temp[0] = ch, temp[1] = '\0'</code>, and dispatch <code>detect(temp)</code> immediately.</li>
+        </ul>
+      </li>
+      <li>
+        <strong>End-of-File (EOF) Invariant:</strong>
+        When <code>fgetc()</code> returns <code>EOF</code>, verify <code>if (idx &gt; 0)</code>. If true, null-terminate and dispatch <code>detect(buffer)</code> to ensure the trailing token without a trailing newline is never lost.
+      </li>
+    </ol>
+  </div>
+
+  <h2>4. Minimal Reconstructible C Skeleton (&lt; 45 Lines)</h2>
+  <p>This compact, complete implementation fits entirely in active memory and can be reproduced on a blank sheet or exam terminal in under 3 minutes:</p>
+
+  <pre><code>#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;ctype.h&gt;
+#include &lt;stdbool.h&gt;
+
+char *kw[] = {"int","float","char","double","if","else","while","for","return","void"};
+char *op[] = {"+","-","*","/","=","==","&lt;","&gt;","&lt;=",">="};
+char sp[] = ";,(){}[]";
+
+bool is_kw(char *s) { for (int i=0; i&lt;10; i++) if (!strcmp(s, kw[i])) return true; return false; }
+bool is_op(char *s) { for (int i=0; i&lt;10; i++) if (!strcmp(s, op[i])) return true; return false; }
+bool is_num(char *s) { for (int i=0; s[i]; i++) if (!isdigit(s[i])) return false; return true; }
+bool is_id(char *s) {
+    if (!isalpha(s[0]) &amp;&amp; s[0] != '_') return false;
+    for (int i=1; s[i]; i++) if (!isalnum(s[i]) &amp;&amp; s[i] != '_') return false;
+    return true;
+}
+
+void detect(char *s) {
+    if (!s[0]) return;
+    if (is_kw(s)) printf("%-15s : Keyword\n", s);
+    else if (is_op(s)) printf("%-15s : Operator\n", s);
+    else if (strlen(s) == 1 &amp;&amp; strchr(sp, s[0])) printf("%-15s : Special Symbol\n", s);
+    else if (is_num(s)) printf("%-15s : Constant\n", s);
+    else if (is_id(s)) printf("%-15s : Identifier\n", s);
+    else printf("%-15s : Invalid Token\n", s);
+}
+
+int main() {
+    FILE *fp = fopen("input.txt", "r");
+    if (!fp) return printf("Error opening input.txt\n"), 1;
+    char ch, buf[50]; int idx = 0;
+    printf("%-15s   %s\n-----------------------------\n", "LEXEME", "TOKEN TYPE");
+    while ((ch = fgetc(fp)) != EOF) {
+        if (isspace(ch)) {
+            if (idx &gt; 0) { buf[idx] = '\0'; detect(buf); idx = 0; }
+        } else if (strchr("+-*/=;,(){}[]&lt;&gt;", ch)) {
+            if (idx &gt; 0) { buf[idx] = '\0'; detect(buf); idx = 0; }
+            char t[2] = {ch, '\0'}; detect(t);
+        } else buf[idx++] = ch;
+    }
+    if (idx &gt; 0) { buf[idx] = '\0'; detect(buf); }
+    fclose(fp);
+    return 0;
+}</code></pre>
+
+  <h2>5. Examiner Viva Traps &amp; Defense Points</h2>
+
+  <div class="callout">
+    <strong>Trap 1: What is the fundamental difference between a Lexeme, a Token, and a Pattern?</strong>
+    <ul>
+      <li><strong>Pattern:</strong> The formal grammatical specification (usually expressed as a Regular Expression) describing what characters may constitute a given category. Example: <code>[a-zA-Z_][a-zA-Z0-9_]*</code> is the pattern for an identifier.</li>
+      <li><strong>Lexeme:</strong> The concrete sequence of characters in the source code matching a pattern. Example: <code>sum</code>, <code>total_count</code>, <code>42</code>, <code>while</code>.</li>
+      <li><strong>Token:</strong> An abstract terminal category symbol returned by the lexical analyzer to the parser, optionally bundled with an attribute value. Example: <code>&lt;ID, &amp;symbol_table_entry&gt;</code>, <code>&lt;KEYWORD, INT&gt;</code>, <code>&lt;NUM, 42&gt;</code>.</li>
+    </ul>
+  </div>
+
+  <div class="callout">
+    <strong>Trap 2: Why must <code>is_keyword()</code> be checked strictly BEFORE <code>is_identifier()</code>?</strong>
+    <p>All C language keywords (like <code>int</code>, <code>float</code>, <code>while</code>, <code>return</code>) strictly adhere to the lexical pattern of identifiers: starting with an alphabet and followed by letters/digits. Therefore, the identifier regular expression is a proper superset containing all keywords. If identifier validation ran first, every single keyword would evaluate to <code>true</code> and be mistakenly reported as an <code>Identifier</code>!</p>
+  </div>
+
+  <div class="callout">
+    <strong>Trap 3: How does this procedural C scanner compare to a LEX/Flex tool implementation?</strong>
+    <ul>
+      <li><strong>Procedural C Scanner:</strong> Reads character-by-character and executes manual string comparison loops (<code>strcmp</code>, <code>isdigit</code>, <code>isalpha</code>) at token boundaries. Time complexity per lexeme scales with the number of keywords ($O(K \times L)$).</li>
+      <li><strong>LEX/Flex Tool:</strong> Automatically translates regular expression patterns into a Deterministic Finite Automaton (DFA) state transition table using Thompson's construction and subset construction. State transitions occur in strictly $O(1)$ time per character, independent of how many keywords or patterns are declared.</li>
+    </ul>
+  </div>
+
+  <div class="callout">
+    <strong>Trap 4: How would you extend this program to handle single-line (<code>//</code>) and multi-line (<code>/* ... */</code>) comments?</strong>
+    <p>When the scanner encounters a forward slash <code>'/'</code>, it should peek at the next character using <code>fgetc(fp)</code>:</p>
+    <ul>
+      <li>If next is <code>'/'</code>: discard characters in a <code>while</code> loop until <code>'\n'</code> or <code>EOF</code> is reached (single-line comment).</li>
+      <li>If next is <code>'*'</code>: enter a loop discarding characters until encountering <code>'*'</code> immediately followed by <code>'/'</code> (multi-line comment).</li>
+      <li>If next is neither: push the character back onto the stream using <code>ungetc(next, fp)</code> and treat <code>'/'</code> as a standard arithmetic division operator.</li>
+    </ul>
+  </div>
+
+  <div class="callout">
+    <strong>Trap 5: How does the scanner handle multi-character relational operators like <code>==</code>, <code>&lt;=</code>, or <code>!=</code>?</strong>
+    <p>In this basic implementation, single-character operators are emitted individually. To support multi-character operators, the scanner uses a <em>lookahead</em>: upon encountering <code>'='</code>, <code>'&lt;'</code>, <code>'&gt;'</code>, or <code>'!'</code>, it reads the next character with <code>fgetc()</code>. If the next character is <code>'='</code>, it creates a 2-character string <code>"=="</code>, <code>"&lt;="</code>, <code>"&gt;="</code>, or <code>"!="</code> and calls <code>detect()</code>. If not, it uses <code>ungetc()</code> to push the second character back into the stream and emits the single operator.</p>
+  </div>
+
+  <div class="nav-links">
+    <a href="../index.html" class="nav-home">&larr; Home</a>
+    <a href="../lessons/0006-lexical-analyzer-in-c-from-scratch.html">&larr; Return to Lesson 0006</a>
+    <a href="shift-reduce-reference.html">Previous: Shift-Reduce Parser Reference &rarr;</a>
+  </div>
+</div>
+</body>
+</html>

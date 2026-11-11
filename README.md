@@ -27,6 +27,7 @@ This portal re-engineers every lab program into **mental models**, **algorithmic
 | **03** | **FIRST Set of Grammar** | ANSI C | Direct production indexing `p[i][2]`, `<ctype.h>` `isupper()` non-terminal recursion, epsilon (`$`) bubbling, and duplicate suppression via `addToResultSet()` | [Lesson 03](lessons/0003-first-set-of-grammar-from-scratch.html) | [Cheat Sheet 03](reference/first-of-grammar-reference.html) |
 | **04** | **Intermediate Code Generator (TAC)** | ANSI C | Two-pass precedence scanning (`*`, `/` prioritized before `+`, `-`), temporary variable synthesis (`t1`, `t2`), and 4-quadruple relational branching templates | [Lesson 04](lessons/0004-intermediate-code-generator-from-scratch.html) | [Cheat Sheet 04](reference/intermediate-code-reference.html) |
 | **05** | **Shift-Reduce Parser** | ANSI C | Dual-pointer bottom-up stack automaton, greedy handle pruning, `while(check())` cascading reduction guard, and `k >= 3` memory underflow protection | [Lesson 05](lessons/0005-shift-reduce-parser-from-scratch.html) | [Cheat Sheet 05](reference/shift-reduce-reference.html) |
+| **06** | **Lexical Analyzer in C** | ANSI C | Character stream scanner (`fgetc`), adjacent delimiter flush check (`idx > 0`), priority classification (`Keyword > Operator > Special > Constant > Identifier`), and ANSI C token rules | [Lesson 06](lessons/0006-lexical-analyzer-in-c-from-scratch.html) | [Cheat Sheet 06](reference/lexical-analyzer-c-reference.html) |
 
 ---
 
@@ -62,6 +63,11 @@ gcc intermediate_code.c -o icg && ./icg
 # 5. Shift-Reduce Parser Simulation
 # ========================================================
 gcc shift_reduce_parser.c -o srp && ./srp
+
+# ========================================================
+# 6. Lexical Analyzer in C
+# ========================================================
+gcc lexical_analyser_c.c -o lex_c && ./lex_c
 ```
 
 ---

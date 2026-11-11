@@ -16,7 +16,7 @@
   </header>
 
   <div class="badge-row">
-    <span class="badge">📖 5 Core Programs</span>
+    <span class="badge">📖 6 Core Programs</span>
     <span class="badge">🧠 Mental Models &amp; Invariants</span>
     <span class="badge">⚡ Blank-Sheet Recall</span>
     <span class="badge">🎯 Viva Defense Prep</span>
@@ -104,6 +104,21 @@
         <a href="reference/shift-reduce-reference.html" class="btn btn-secondary">Cheat Sheet &rarr;</a>
       </div>
     </div>
+
+    <!-- Program 6 -->
+    <div class="program-card">
+      <div class="program-header">
+        <span class="program-num">06</span>
+        <h3 class="program-title">Lexical Analyzer in C</h3>
+      </div>
+      <p class="program-desc">
+        Front-end scanner implementation from scratch. Master character stream scanning via <code>fgetc()</code>, the <code>idx &gt; 0</code> buffer flush invariant for unspaced expressions (e.g., <code>a=b+10;</code>), and the critical keyword-before-identifier priority taxonomy.
+      </p>
+      <div class="program-actions">
+        <a href="lessons/0006-lexical-analyzer-in-c-from-scratch.html" class="btn btn-primary">Open Lesson &rarr;</a>
+        <a href="reference/lexical-analyzer-c-reference.html" class="btn btn-secondary">Cheat Sheet &rarr;</a>
+      </div>
+    </div>
   </div>
 
   <h2>2. Quick Program Matrix</h2>
@@ -154,6 +169,13 @@
           <td>Stack automaton, <code>while(check())</code> cascading reductions, <code>k &gt;= 3</code> boundary guard</td>
           <td><a href="lessons/0005-shift-reduce-parser-from-scratch.html">Lesson</a> &bull; <a href="reference/shift-reduce-reference.html">Cheat Sheet</a></td>
         </tr>
+        <tr>
+          <td><strong>06</strong></td>
+          <td>Lexical Analyzer in C</td>
+          <td>ANSI C</td>
+          <td><code>fgetc()</code> stream, <code>idx &gt; 0</code> flush guard, Keyword &gt; Identifier priority</td>
+          <td><a href="lessons/0006-lexical-analyzer-in-c-from-scratch.html">Lesson</a> &bull; <a href="reference/lexical-analyzer-c-reference.html">Cheat Sheet</a></td>
+        </tr>
       </tbody>
     </table>
   </div>
@@ -184,7 +206,10 @@ gcc first_of_grammar.c -o first_set &amp;&amp; ./first_set
 gcc intermediate_code.c -o icg &amp;&amp; ./icg
 
 # --- 5. Shift-Reduce Parser ---
-gcc shift_reduce_parser.c -o srp &amp;&amp; ./srp</code></pre>
+gcc shift_reduce_parser.c -o srp &amp;&amp; ./srp
+
+# --- 6. Lexical Analyzer in C ---
+gcc lexical_analyser_c.c -o lex_c &amp;&amp; ./lex_c</code></pre>
   </div>
 
   <h2>4. Study Principles &amp; Resources</h2>

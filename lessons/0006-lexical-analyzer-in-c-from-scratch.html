@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 0006: Lexical Analyzer in C From Scratch</title>
+  <link rel="stylesheet" href="../assets/style.css">
+  <script src="../assets/theme.js"></script>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="kicker"><a href="../index.html" class="kicker-home">&larr; Home</a> &bull; Lesson 0006 &bull; Compiler Design Lab</div>
+    <h1>Lexical Analyzer in C From Scratch</h1>
+    <p class="subtitle">Stream scanning, buffer flush invariants, hierarchical classification, and keyword precedence.</p>
+  </header>
+
+  <div class="callout">
+    <strong>Mission Alignment:</strong> Your objective is to design and write the complete C program for a Lexical Analyzer (Scanner) on a blank whiteboard or empty terminal without notes. By the end of this 12-minute lesson, you will master the two cooperating engines: the character stream scanner with delimiter flush guards and the 5-tier hierarchical token classifier.
+  </div>
+
+  <h2>1. The Mental Model: The Automated Mail Sorting Conveyor</h2>
+  <p>Before a compiler can check grammar or generate code, it must transform raw text into meaningful semantic units. Source code enters as an unstructured stream of characters: <code>'i'</code>, <code>'n'</code>, <code>'t'</code>, <code>' '</code>, <code>'a'</code>, <code>'='</code>, <code>'1'</code>, <code>'0'</code>, <code>';'</code>.</p>
+
+  <p>Think of the lexical analyzer as an <strong>Automated Mail Sorting Conveyor Belt</strong>:</p>
+
+  <div class="diagram-box">
+    <ol>
+      <li><strong>The Stream Feeder (<code>fgetc</code>):</strong> Characters arrive one-by-one on a moving conveyor belt from the input file.</li>
+      <li><strong>The Postal Bag (<code>buffer[50]</code>):</strong> When alphanumeric letters and digits appear, they drop into a collection bag. Each new character appends to the bag (<code>buffer[idx++] = ch</code>).</li>
+      <li><strong>Whitespace Gaps (Spaces, Tabs, Newlines):</strong> A whitespace signifies empty belt space. When a gap appears, if the bag contains mail (<code>idx &gt; 0</code>), we seal it with a null terminator (<code>'\0'</code>), slide it to the inspection counter (<code>detect(buffer)</code>), and reset the bag pointer (<code>idx = 0</code>).</li>
+      <li><strong>Mechanical Lane Dividers (Operators &amp; Punctuation):</strong> Symbols like <code>=</code>, <code>+</code>, or <code>;</code> act as physical metal dividers on the conveyor belt. When an envelope hits a divider, two events fire in instant succession:
+        <ul>
+          <li><strong>Step A:</strong> The preceding package in the bag is immediately sealed and classified (e.g., flushing <code>"a"</code> when hitting <code>'='</code>).</li>
+          <li><strong>Step B:</strong> The divider itself is packaged into a mini-envelope (<code>temp[0]=ch, temp[1]='\0'</code>) and classified immediately as an Operator or Special Symbol.</li>
+        </ul>
+      </li>
+      <li><strong>The Final Sweep (EOF Guard):</strong> When the conveyor stops at End-Of-File, any remaining letters in the bag are sealed and processed so nothing gets left behind.</li>
+    </ol>
+  </div>
+
+  <h2>2. Why Naive Tokenizers (like <code>strtok</code>) Fail</h2>
+  <p>Beginners often ask: <em>"Why can't we just read the file line-by-line with <code>fgets()</code> and split strings using <code>strtok(line, " ")</code>?"</em></p>
+
+  <p>Consider this standard, syntactically valid C statement:</p>
+  <pre><code>a=b+10;</code></pre>
+
+  <p>Because there is <strong>not a single whitespace</strong> in that line, <code>strtok(line, " ")</code> returns the entire string <code>"a=b+10;"</code> as one gigantic token! The parser has no way to decipher where the variable ends and the assignment operator begins. A true compiler scanner must inspect characters at the stream level and treat punctuation symbols as <strong>self-delimiting token boundaries</strong>.</p>
+
+  <h2>3. Component 1: The Character Stream Scanner Engine</h2>
+  <p>The scanner loop consumes characters directly from the file pointer using <code>fgetc()</code>. It maintains a 50-byte accumulator buffer and an integer write index <code>idx</code>:</p>
+
+  <pre><code>FILE *ptr = fopen("input.txt", "r");
+char ch;
+char buffer[50];
+int idx = 0;
+
+while ((ch = fgetc(ptr)) != EOF) {
+    /* Case 1: Whitespace Delimiters */
+    if (ch == ' ' || ch == '\t' || ch == '\n') {
+        if (idx &gt; 0) {
+            buffer[idx] = '\0';  /* Seal string */
+            detect(buffer);      /* Classify lexeme */
+            idx = 0;             /* Reset bag */
+        }
+    }
+    /* Case 2: Self-Delimiting Operators &amp; Special Symbols */
+    else if (ch == '+' || ch == '-' || ch == '*' || ch == '/' || ch == '=' ||
+             ch == ';' || ch == ',' || ch == '(' || ch == ')' || 
+             ch == '{' || ch == '}' || ch == '[' || ch == ']') {
+        
+        /* Flush preceding token if packed without spaces (e.g., "a=") */
+        if (idx &gt; 0) {
+            buffer[idx] = '\0';
+            detect(buffer);
+            idx = 0;
+        }
+        /* Package single punctuation character into string */
+        char temp[2] = {ch, '\0'};
+        detect(temp);
+    }
+    /* Case 3: Alphanumerics &amp; Numeric Digits */
+    else {
+        buffer[idx++] = ch;
+    }
+}
+
+/* Guard: Flush any trailing token before EOF */
+if (idx &gt; 0) {
+    buffer[idx] = '\0';
+    detect(buffer);
+}
+fclose(ptr);</code></pre>
+
+  <div class="callout">
+    <strong>The Self-Delimiting Flush Invariant:</strong> Look closely at Case 2. If the scanner reads <code>a=b</code>, the buffer holds <code>"a"</code> when <code>ch</code> becomes <code>'='</code>. The guard <code>if (idx &gt; 0)</code> detects this uncommitted token, flushes <code>"a"</code> to <code>detect()</code>, resets <code>idx = 0</code>, and only then emits <code>'='</code> via <code>temp</code>. This guarantees zero lost tokens regardless of whitespace styling!
+  </div>
+
+  <h2>4. Component 2: The Hierarchical Classifier <code>detect()</code></h2>
+  <p>Once a candidate lexeme is isolated, it is passed to <code>detect(char buffer[])</code>. The classifier executes five validation subroutines in a strict priority waterfall:</p>
+
+  <div class="diagram-box">
+    <table>
+      <thead>
+        <tr>
+          <th>Priority</th>
+          <th>Subroutine</th>
+          <th>Matching Logic</th>
+          <th>Emitted Category</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>1</strong></td>
+          <td><code>is_keyword(buffer)</code></td>
+          <td>Compares against reserved array: <code>int</code>, <code>float</code>, <code>if</code>, <code>while</code>, etc.</td>
+          <td><code>Keyword</code></td>
+        </tr>
+        <tr>
+          <td><strong>2</strong></td>
+          <td><code>is_operator(buffer)</code></td>
+          <td>Compares against operator array: <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, <code>=</code>, etc.</td>
+          <td><code>Operator</code></td>
+        </tr>
+        <tr>
+          <td><strong>3</strong></td>
+          <td><code>is_special(buffer)</code></td>
+          <td>Compares against delimiter array: <code>;</code>, <code>,</code>, <code>(</code>, <code>)</code>, <code>{</code>, <code>}</code>, etc.</td>
+          <td><code>Special Symbol</code></td>
+        </tr>
+        <tr>
+          <td><strong>4</strong></td>
+          <td><code>is_constant(buffer)</code></td>
+          <td>Iterates through characters: all must satisfy <code>isdigit(c)</code></td>
+          <td><code>Constant</code></td>
+        </tr>
+        <tr>
+          <td><strong>5</strong></td>
+          <td><code>is_identifier(buffer)</code></td>
+          <td>Checks first char (letter/<code>_</code>), then remaining chars (alnum/<code>_</code>)</td>
+          <td><code>Identifier</code></td>
+        </tr>
+        <tr>
+          <td><strong>Fallback</strong></td>
+          <td><em>Default Else</em></td>
+          <td>Lexeme matches none of the 5 valid grammar categories</td>
+          <td><code>Invalid Token</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <strong>The "Keyword Before Identifier" Precedence Trap:</strong>
+    <p>Why is Priority 1 mandatory? In ANSI C, an identifier is defined by the regular expression <code>[a-zA-Z_][a-zA-Z0-9_]*</code>.</p>
+    <p>Now look at the keyword <code>int</code>. Does it start with a letter? <strong>Yes (<code>'i'</code>).</strong> Are the remaining characters letters or digits? <strong>Yes (<code>'n'</code>, <code>'t'</code>).</strong></p>
+    <p>Therefore, <em>every single keyword in the C language is structurally a valid identifier!</em> If you place <code>is_identifier()</code> above <code>is_keyword()</code> in your <code>if-else</code> chain, every keyword will be captured as a variable name, and zero keywords will ever be reported. Checking keywords first intercepts and reserves them.</p>
+  </div>
+
+  <h2>5. Step-by-Step Execution Trace Walkthrough</h2>
+  <p>Let us trace the scanner character-by-character on our target source file <code>input.txt</code>:</p>
+
+  <pre><code>int a , b ;
+a = b + 10 ;</code></pre>
+
+  <div class="diagram-box">
+    <table>
+      <thead>
+        <tr>
+          <th>Stream Char</th>
+          <th>Buffer Before</th>
+          <th>Buffer After</th>
+          <th>Trigger Event</th>
+          <th>Emitted Token Output</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>'i'</code></td>
+          <td><code>""</code></td>
+          <td><code>"i"</code></td>
+          <td>Character accumulation</td>
+          <td><em>(buffering)</em></td>
+        </tr>
+        <tr>
+          <td><code>'n'</code></td>
+          <td><code>"i"</code></td>
+          <td><code>"in"</code></td>
+          <td>Character accumulation</td>
+          <td><em>(buffering)</em></td>
+        </tr>
+        <tr>
+          <td><code>'t'</code></td>
+          <td><code>"in"</code></td>
+          <td><code>"int"</code></td>
+          <td>Character accumulation</td>
+          <td><em>(buffering)</em></td>
+        </tr>
+        <tr>
+          <td><code>' '</code></td>
+          <td><code>"int"</code></td>
+          <td><code>""</code></td>
+          <td>Whitespace &rarr; Flush buffer</td>
+          <td><code>int             : Keyword</code></td>
+        </tr>
+        <tr>
+          <td><code>'a'</code></td>
+          <td><code>""</code></td>
+          <td><code>"a"</code></td>
+          <td>Character accumulation</td>
+          <td><em>(buffering)</em></td>
+        </tr>
+        <tr>
+          <td><code>' '</code></td>
+          <td><code>"a"</code></td>
+          <td><code>""</code></td>
+          <td>Whitespace &rarr; Flush buffer</td>
+          <td><code>a               : Identifier</code></td>
+        </tr>
+        <tr>
+          <td><code>','</code></td>
+          <td><code>""</code></td>
+          <td><code>""</code></td>
+          <td>Special symbol detected directly</td>
+          <td><code>,               : Special Symbol</code></td>
+        </tr>
+        <tr>
+          <td><code>' '</code></td>
+          <td><code>""</code></td>
+          <td><code>""</code></td>
+          <td>Whitespace (buffer empty)</td>
+          <td><em>(skipped)</em></td>
+        </tr>
+        <tr>
+          <td><code>'b'</code></td>
+          <td><code>""</code></td>
+          <td><code>"b"</code></td>
+          <td>Character accumulation</td>
+          <td><em>(buffering)</em></td>
+        </tr>
+        <tr>
+          <td><code>' '</code></td>
+          <td><code>"b"</code></td>
+          <td><code>""</code></td>
+          <td>Whitespace &rarr; Flush buffer</td>
+          <td><code>b               : Identifier</code></td>
+        </tr>
+        <tr>
+          <td><code>';'</code></td>
+          <td><code>""</code></td>
+          <td><code>""</code></td>
+          <td>Special symbol detected directly</td>
+          <td><code>;               : Special Symbol</code></td>
+        </tr>
+        <tr>
+          <td><code>'\n'</code></td>
+          <td><code>""</code></td>
+          <td><code>""</code></td>
+          <td>Newline (buffer empty)</td>
+          <td><em>(skipped)</em></td>
+        </tr>
+        <tr>
+          <td><code>'a'</code></td>
+          <td><code>""</code></td>
+          <td><code>"a"</code></td>
+          <td>Character accumulation</td>
+          <td><em>(buffering)</em></td>
+        </tr>
+        <tr>
+          <td><code>' '</code></td>
+          <td><code>"a"</code></td>
+          <td><code>""</code></td>
+          <td>Whitespace &rarr; Flush buffer</td>
+          <td><code>a               : Identifier</code></td>
+        </tr>
+        <tr>
+          <td><code>'='</code></td>
+          <td><code>""</code></td>
+          <td><code>""</code></td>
+          <td>Operator detected directly</td>
+          <td><code>=               : Operator</code></td>
+        </tr>
+        <tr>
+          <td><code>' '</code></td>
+          <td><code>""</code></td>
+          <td><code>""</code></td>
+          <td>Whitespace (buffer empty)</td>
+          <td><em>(skipped)</em></td>
+        </tr>
+        <tr>
+          <td><code>'b'</code></td>
+          <td><code>""</code></td>
+          <td><code>"b"</code></td>
+          <td>Character accumulation</td>
+          <td><em>(buffering)</em></td>
+        </tr>
+        <tr>
+          <td><code>' '</code></td>
+          <td><code>"b"</code></td>
+          <td><code>""</code></td>
+          <td>Whitespace &rarr; Flush buffer</td>
+          <td><code>b               : Identifier</code></td>
+        </tr>
+        <tr>
+          <td><code>'+'</code></td>
+          <td><code>""</code></td>
+          <td><code>""</code></td>
+          <td>Operator detected directly</td>
+          <td><code>+               : Operator</code></td>
+        </tr>
+        <tr>
+          <td><code>' '</code></td>
+          <td><code>""</code></td>
+          <td><code>""</code></td>
+          <td>Whitespace (buffer empty)</td>
+          <td><em>(skipped)</em></td>
+        </tr>
+        <tr>
+          <td><code>'1'</code></td>
+          <td><code>""</code></td>
+          <td><code>"1"</code></td>
+          <td>Character accumulation</td>
+          <td><em>(buffering)</em></td>
+        </tr>
+        <tr>
+          <td><code>'0'</code></td>
+          <td><code>"1"</code></td>
+          <td><code>"10"</code></td>
+          <td>Character accumulation</td>
+          <td><em>(buffering)</em></td>
+        </tr>
+        <tr>
+          <td><code>' '</code></td>
+          <td><code>"10"</code></td>
+          <td><code>""</code></td>
+          <td>Whitespace &rarr; Flush buffer</td>
+          <td><code>10              : Constant</code></td>
+        </tr>
+        <tr>
+          <td><code>';'</code></td>
+          <td><code>""</code></td>
+          <td><code>""</code></td>
+          <td>Special symbol detected directly</td>
+          <td><code>;               : Special Symbol</code></td>
+        </tr>
+        <tr>
+          <td><code>EOF</code></td>
+          <td><code>""</code></td>
+          <td><code>""</code></td>
+          <td>Stream exhausted &rarr; close file</td>
+          <td><em>(complete)</em></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>6. Interactive Mastery Check</h2>
+  <p>Test your conceptual retention. Choose the exact answer to each diagnostic question:</p>
+
+  <!-- Quiz Question 1 -->
+  <div class="quiz-container" id="q1">
+    <div class="quiz-title">Question 1</div>
+    <div class="quiz-question">Why must <code>is_keyword()</code> execute before <code>is_identifier()</code> in the <code>detect()</code> function?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q1', 0, false, 'Incorrect. String comparison speed does not dictate algorithmic correctness.')">Identifiers execute faster than keywords during string comparisons</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 1, true, 'Correct! Because keywords match the identifier regex [a-zA-Z_][a-zA-Z0-9_]*, checking identifiers first would misclassify every keyword as a variable.')">Keywords satisfy all lexical grammar rules for identifiers</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 2, false, 'Incorrect. Keyword arrays are static string literals stored in data segments.')">Memory allocation requires keyword arrays to load first</div>
+      <div class="quiz-option" onclick="checkAnswer('q1', 3, false, 'Incorrect. This ordering is an algorithmic necessity of regular expressions, not a compiler standard quirk.')">Standard ANSI C compilers enforce this execution sequence</div>
+    </div>
+    <div class="quiz-feedback" id="q1-feedback"></div>
+  </div>
+
+  <!-- Quiz Question 2 -->
+  <div class="quiz-container" id="q2">
+    <div class="quiz-title">Question 2</div>
+    <div class="quiz-question">What is the primary purpose of checking <code>if (idx &gt; 0)</code> before handling a self-delimiting symbol like <code>+</code> or <code>=</code>?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q2', 0, false, 'Incorrect. Array boundary guards are handled by fixed-size buffers, not the delimiter flush check.')">Prevents file pointer from exceeding buffer boundaries</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 1, false, 'Incorrect. Terminal output formatting is completely unaffected by stream buffering.')">Clears terminal screen before printing table headers</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 2, true, 'Correct! When code lacks spaces (like a=b+10), encountering an operator must first flush and classify the accumulated variable before classifying the operator itself.')">Flushes preceding accumulated lexemes before symbol detection</div>
+      <div class="quiz-option" onclick="checkAnswer('q2', 3, false, 'Incorrect. Linkers do not inspect run-time stream delimiter conditions.')">Suppresses compilation warnings emitted by modern linkers</div>
+    </div>
+    <div class="quiz-feedback" id="q2-feedback"></div>
+  </div>
+
+  <!-- Quiz Question 3 -->
+  <div class="quiz-container" id="q3">
+    <div class="quiz-title">Question 3</div>
+    <div class="quiz-question">How does this procedural C lexical analyzer fundamentally differ from a LEX/Flex generated scanner?</div>
+    <div class="quiz-options">
+      <div class="quiz-option" onclick="checkAnswer('q3', 0, true, 'Correct! LEX compiles regular expressions into a Deterministic Finite Automaton (DFA) state transition table via subset construction, whereas this C scanner uses procedural loops and sequential string comparisons.')">C uses sequential string matching while LEX compiles DFAs</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 1, false, 'Incorrect. Neither C lexical analyzers nor LEX tools perform recursive descent parsing; parsing is phase 2.')">C handles recursive descent parsing while LEX evaluates expressions</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 2, false, 'Incorrect. Both tools can run with static or stack-allocated buffers without dynamic heap allocation.')">C allocates dynamic heap memory while LEX uses registers</div>
+      <div class="quiz-option" onclick="checkAnswer('q3', 3, false, 'Incorrect. Both implementations run in user-space without special OS privileges.')">C requires operating system privileges while LEX runs unprivileged</div>
+    </div>
+    <div class="quiz-feedback" id="q3-feedback"></div>
+  </div>
+
+  <h2>7. Recommended Primary Sources</h2>
+  <p>To solidify your foundational understanding of lexical analysis and finite state automata:</p>
+  <ul>
+    <li><strong>The Dragon Book:</strong> <em>Compilers: Principles, Techniques, and Tools</em> by Aho, Lam, Sethi, &amp; Ullman &mdash; <strong>Chapter 3: Lexical Analysis</strong>. Read Section 3.1 (The Role of the Lexical Analyzer) and Section 3.6 (Finite Automata) to understand how regular expressions translate into transition tables.</li>
+    <li><strong>O'Reilly lex &amp; yacc:</strong> by Levine, Mason, &amp; Brown &mdash; <strong>Chapter 1 &amp; 2: Lexical Analysis &amp; Using LEX</strong>. Study how declarative rule sets in <code>.l</code> files replace manual character-by-character loops with DFA state transition engines.</li>
+  </ul>
+
+  <div class="callout">
+    <strong>Need Clarification?</strong> If any stream transition (such as the <code>temp[2]</code> operator packaging) or identifier regex validation feels confusing, ask your teacher agent right now. We can walk through custom expressions like <code>x_1=count*25;</code> before testing your blank-sheet recall.
+  </div>
+
+  <div class="nav-links">
+    <a href="0005-shift-reduce-parser-from-scratch.html">&larr; Lesson 0005: Shift-Reduce Parser</a>
+    <a href="../index.html" class="nav-home">&larr; Home</a>
+    <a href="../reference/lexical-analyzer-c-reference.html">&rarr; Open Reference Sheet</a>
+  </div>
+</div>
+
+<script>
+function checkAnswer(questionId, selectedIdx, isCorrect, explanation) {
+  const container = document.getElementById(questionId);
+  const options = container.querySelectorAll('.quiz-option');
+  const feedback = document.getElementById(questionId + '-feedback');
+  
+  options.forEach((opt, idx) => {
+    opt.classList.remove('correct', 'incorrect');
+    if (idx === selectedIdx) {
+      opt.classList.add(isCorrect ? 'correct' : 'incorrect');
+    }
+  });
+  
+  feedback.style.display = 'block';
+  feedback.style.backgroundColor = isCorrect ? 'var(--success-bg)' : 'var(--error-bg)';
+  feedback.style.color = isCorrect ? 'var(--success)' : 'var(--error)';
+  feedback.innerHTML = (isCorrect ? '<strong>✓ Correct!</strong> ' : '<strong>✗ Incorrect.</strong> ') + explanation;
+}
+</script>
+</body>
+</html>

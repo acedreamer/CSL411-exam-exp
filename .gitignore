@@ -17,7 +17,9 @@ constant_propagation.md
 first_of_grammar.md
 intermediate_code_generator.md
 shift_reduce_parser.md
+lexical_analyser_c.md
 explanations/
+a.txt
 
 # --- Editor & IDE Files ---
 .vscode/
@@ -32,3 +34,4 @@ ehthumbs.db
 # --- Agentic Assistant & Local Environment Metadata ---
 .antigravity/
 .gemini/
+misc/
